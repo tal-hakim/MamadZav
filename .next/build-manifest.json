@@ -31,11 +31,6 @@
       "static/chunks/webpack.js",
       "static/chunks/main.js",
       "static/chunks/pages/login.js"
-    ],
-    "/test-friends": [
-      "static/chunks/webpack.js",
-      "static/chunks/main.js",
-      "static/chunks/pages/test-friends.js"
     ]
   },
   "ampFirstPages": []
