@@ -1,0 +1,56 @@
+[2025-06-15T14:33:24.437Z] INFO: === START: Friend Request Acceptance ===
+[2025-06-15T14:33:24.440Z] DEBUG: Request body:
+{
+  "username": "lilo_stitch"
+}
+[2025-06-15T14:33:24.442Z] DEBUG: Username from request:
+"lilo_stitch"
+[2025-06-15T14:33:24.444Z] DEBUG: Current user:
+{
+  "id": "684eb2834ef1c1e06472b6ed",
+  "username": "israel_israeli"
+}
+[2025-06-15T14:33:24.446Z] DEBUG: Fetching current user with populated data...
+[2025-06-15T14:33:25.093Z] DEBUG: Looking for friend request...
+[2025-06-15T14:33:25.095Z] DEBUG: Found pending request:
+{
+  "from": {
+    "id": "684ebc174ef1c1e06472b747",
+    "username": "lilo_stitch"
+  }
+}
+[2025-06-15T14:33:25.097Z] INFO: Updating both users...
+[2025-06-15T14:33:25.401Z] INFO: Updates successful
+[2025-06-15T14:33:25.404Z] DEBUG: Updated user friends:
+[
+  "684eb2244ef1c1e06472b6ea",
+  "684ebc174ef1c1e06472b747"
+]
+[2025-06-15T14:34:45.688Z] INFO: === START: Friend Request Acceptance ===
+[2025-06-15T14:34:45.690Z] DEBUG: Request body:
+{
+  "username": "lilo_stitch"
+}
+[2025-06-15T14:34:45.691Z] DEBUG: Username from request:
+"lilo_stitch"
+[2025-06-15T14:34:45.692Z] DEBUG: Current user:
+{
+  "id": "684eb2244ef1c1e06472b6ea",
+  "username": "testuser"
+}
+[2025-06-15T14:34:45.693Z] DEBUG: Fetching current user with populated data...
+[2025-06-15T14:34:46.299Z] DEBUG: Looking for friend request...
+[2025-06-15T14:34:46.301Z] DEBUG: Found pending request:
+{
+  "from": {
+    "id": "684ebc174ef1c1e06472b747",
+    "username": "lilo_stitch"
+  }
+}
+[2025-06-15T14:34:46.302Z] INFO: Updating both users...
+[2025-06-15T14:34:46.506Z] INFO: Updates successful
+[2025-06-15T14:34:46.507Z] DEBUG: Updated user friends:
+[
+  "684eb2834ef1c1e06472b6ed",
+  "684ebc174ef1c1e06472b747"
+]

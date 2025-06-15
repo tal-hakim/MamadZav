@@ -70,6 +70,7 @@ export default function Home() {
   const fetchFriends = async () => {
     setLoadingFriends(true);
     try {
+      console.log('Fetching friends list...');
       const token = localStorage.getItem('token');
       if (!token) {
         throw new Error('No authentication token found');
@@ -78,10 +79,13 @@ export default function Home() {
       const response = await axios.get('/api/user/friends', {
         headers: { Authorization: `Bearer ${token}` }
       });
+      console.log('Friends response:', response.data);
 
       setFriends(response.data.friends || []);
       setFriendRequests(response.data.friendRequests || []);
+      console.log('Updated state with new friends and requests');
     } catch (error) {
+      console.error('Error fetching friends:', error);
       handleAuthError(error);
       
       toast({
@@ -99,15 +103,18 @@ export default function Home() {
 
   const handleAcceptRequest = async (username: string) => {
     try {
+      console.log('Accepting friend request for:', username);
       const token = localStorage.getItem('token');
       if (!token) {
         throw new Error('No authentication token found');
       }
 
-      await axios.put('/api/user/friends', 
+      console.log('Sending PUT request to /api/user/friends');
+      const response = await axios.put('/api/user/friends', 
         { username },
         { headers: { Authorization: `Bearer ${token}` } }
       );
+      console.log('Response:', response.data);
 
       toast({
         title: 'Friend request accepted',
@@ -115,8 +122,11 @@ export default function Home() {
         duration: 3000,
       });
       
-      fetchFriends();
+      console.log('Refreshing friends list...');
+      await fetchFriends();
+      console.log('Friends list refreshed');
     } catch (error) {
+      console.error('Error accepting friend request:', error);
       handleAuthError(error);
       
       toast({
@@ -128,7 +138,7 @@ export default function Home() {
     }
   };
 
-  const handleRejectRequest = async (username: string) => {
+  const handleRejectRequest = async (username: string, userId?: string) => {
     try {
       const token = localStorage.getItem('token');
       if (!token) {
@@ -137,7 +147,7 @@ export default function Home() {
 
       await axios.delete('/api/user/friends', {
         headers: { Authorization: `Bearer ${token}` },
-        data: { username }
+        data: userId ? { userId } : { username }
       });
 
       toast({
@@ -235,45 +245,36 @@ export default function Home() {
         </Box>
 
         {friendRequests.length > 0 && (
-          <Box>
-            <Heading size="md" mb={4}>
-              Friend Requests
-            </Heading>
-            <Grid templateColumns="repeat(auto-fill, minmax(300px, 1fr))" gap={4}>
+          <Box mt={8}>
+            <Heading size="md" mb={4}>Friend Requests</Heading>
+            <VStack spacing={4} align="stretch">
               {friendRequests.map((request) => (
-                <GridItem
-                  key={request.id}
-                  p={4}
-                  borderWidth={1}
-                  borderRadius="md"
-                  boxShadow="sm"
-                >
-                  <VStack align="stretch" spacing={3}>
+                <Box key={request.id} p={4} borderWidth={1} borderRadius="lg">
+                  <Flex justify="space-between" align="center">
                     <Box>
                       <Text fontWeight="bold">{request.name}</Text>
-                      <Text fontSize="sm" color="gray.600">@{request.username}</Text>
+                      <Text color="gray.600">@{request.username || 'No username'}</Text>
                     </Box>
                     <Flex gap={2}>
                       <Button
-                        size="sm"
                         colorScheme="green"
                         onClick={() => handleAcceptRequest(request.username)}
+                        isDisabled={!request.username}
                       >
                         Accept
                       </Button>
                       <Button
-                        size="sm"
                         colorScheme="red"
                         variant="outline"
-                        onClick={() => handleRejectRequest(request.username)}
+                        onClick={() => handleRejectRequest(request.username || '', request.id)}
                       >
                         Reject
                       </Button>
                     </Flex>
-                  </VStack>
-                </GridItem>
+                  </Flex>
+                </Box>
               ))}
-            </Grid>
+            </VStack>
           </Box>
         )}
 

@@ -4,6 +4,17 @@ import { User, IUser } from '@/models/User';
 import { authMiddleware, AuthenticatedRequest } from '@/middleware/auth';
 import { Types } from 'mongoose';
 import mongoose from 'mongoose';
+import { logger } from '@/lib/logger';
+
+interface FriendRequest {
+  from: {
+    _id: Types.ObjectId;
+    name: string;
+    username: string;
+    email: string;
+  };
+  createdAt: Date;
+}
 
 interface PopulatedUser extends Omit<IUser, 'friends' | 'friendRequests'> {
   _id: Types.ObjectId;
@@ -14,15 +25,7 @@ interface PopulatedUser extends Omit<IUser, 'friends' | 'friendRequests'> {
     email: string;
     lastCheckIn: Date | null;
   }>;
-  friendRequests: Array<{
-    from: {
-      _id: Types.ObjectId;
-      name: string;
-      username: string;
-      email: string;
-    };
-    createdAt: Date;
-  }>;
+  friendRequests: FriendRequest[];
 }
 
 async function handler(
@@ -31,7 +34,7 @@ async function handler(
 ) {
   console.log('Friends API called with method:', req.method);
 
-  if (!['GET', 'POST', 'DELETE', 'PUT'].includes(req.method || '')) {
+  if (!['GET', 'POST', 'DELETE', 'PUT', 'PATCH'].includes(req.method || '')) {
     return res.status(405).json({ message: 'Method not allowed' });
   }
 
@@ -109,7 +112,7 @@ async function handler(
           .map(request => ({
             id: request.from._id.toString(),
             name: request.from.name,
-            username: request.from.username,
+            username: request.from.username || '',
             email: request.from.email,
             createdAt: request.createdAt,
           }));
@@ -193,198 +196,218 @@ async function handler(
     // PUT: Accept a friend request
     if (req.method === 'PUT') {
       try {
-        console.log('\n=== START: Friend Request Acceptance ===');
-        console.log('Raw request body:', JSON.stringify(req.body));
-        console.log('Username from request:', username);
-        console.log('Current user ID:', user._id);
-        
-        // First get the fully populated user document
-        console.log('\nFetching current user with populated data...');
+        logger.info('=== START: Friend Request Acceptance ===');
+        logger.debug('Request body:', req.body);
+        logger.debug('Username from request:', username);
+        logger.debug('Current user:', { id: user._id, username: user.username });
+
+        if (!username) {
+          logger.error('No username provided in request');
+          return res.status(400).json({ message: 'Username is required' });
+        }
+
+        // First get the fully populated user document to access friend request details
+        logger.debug('Fetching current user with populated data...');
         const currentUser = await User.findById(user._id)
           .populate({
             path: 'friendRequests.from',
             select: 'name email username'
           })
-          .lean()
-          .exec() as unknown as {
-            _id: Types.ObjectId;
-            friendRequests: Array<{
-              _id: Types.ObjectId;
-              from: {
-                _id: Types.ObjectId;
-                name: string;
-                username: string;
-                email: string;
-              };
-              createdAt: Date;
-            }>;
-          };
-          
+          .exec();
+
         if (!currentUser) {
-          console.error('Could not find current user with populated data');
+          logger.error('Could not find current user with populated data');
           return res.status(500).json({ message: 'Error loading user data' });
         }
 
-        // Log the full user object for debugging
-        console.log('\nCurrent user data:', JSON.stringify({
-          _id: currentUser._id,
-          friendRequests: currentUser.friendRequests,
-        }, null, 2));
-
-        console.log('\nLooking for friend with username:', username);
+        // Find the friend by username first
         const friend = await User.findOne({ username: username.toLowerCase() });
         if (!friend) {
-          console.log('Friend not found with username:', username);
+          logger.error('Friend not found with username:', username);
           return res.status(404).json({ message: 'User not found' });
         }
-        console.log('Found friend:', {
-          id: friend._id,
-          username: friend.username
-        });
-        
-        // Check if there's a pending request by comparing usernames
-        console.log('\nChecking for pending request...');
-        console.log('Number of friend requests:', currentUser.friendRequests?.length || 0);
-        
-        const pendingRequest = currentUser.friendRequests?.find((request) => {
-          const matches = request.from.username.toLowerCase() === username.toLowerCase();
-          console.log('Checking request:', {
-            fromUsername: request.from.username,
-            targetUsername: username,
-            matches
-          });
-          return matches;
-        });
+
+        // Check if friend request exists by ID
+        logger.debug('Looking for friend request...');
+        const pendingRequest = currentUser.friendRequests.find(
+          (request) => request.from._id.toString() === friend._id.toString()
+        );
 
         if (!pendingRequest) {
-          console.log('\nNo pending request found. All current requests:', 
-            JSON.stringify(currentUser.friendRequests?.map((r) => ({
-              fromUsername: r.from.username,
-              fromId: r.from._id
-            })), null, 2)
-          );
-          return res.status(400).json({ message: 'No friend request found from this user' });
+          logger.error('No friend request found for user:', {
+            friendId: friend._id,
+            username: friend.username,
+            availableRequests: currentUser.friendRequests.map(r => ({
+              id: r.from._id,
+              username: r.from.username
+            }))
+          });
+          return res.status(400).json({ 
+            message: 'No friend request found from this user',
+            debug: {
+              requestedUsername: username,
+              availableRequests: currentUser.friendRequests.map(r => r.from.username)
+            }
+          });
         }
 
-        console.log('\nFound pending request:', {
+        logger.debug('Found pending request:', {
           from: {
             id: pendingRequest.from._id,
-            username: pendingRequest.from.username
+            username: friend.username
           }
         });
 
-        // Remove the request and add to friends for both users
-        console.log('\nUpdating both users...');
-        console.log('Update query:', JSON.stringify({
-          $pull: { 'friendRequests': { 'from': friend._id } },
-          $addToSet: { friends: friend._id }
-        }, null, 2));
-        
-        const [updatedUser, updatedFriend] = await Promise.all([
-          User.findByIdAndUpdate(
-            currentUser._id,
-            {
-              $pull: { 'friendRequests': { 'from': friend._id } },
-              $addToSet: { friends: friend._id },
-            },
-            { 
-              new: true,
-              runValidators: true
-            }
-          ).populate('friends', 'name email username lastCheckIn'),
-          
-          User.findByIdAndUpdate(
-            friend._id,
-            {
-              $addToSet: { friends: currentUser._id },
-            },
-            { 
-              new: true,
-              runValidators: true
-            }
-          )
-        ]);
+        // Update both users
+        logger.info('Updating both users...');
+        try {
+          const [updatedUser] = await Promise.all([
+            User.findByIdAndUpdate(
+              currentUser._id,
+              {
+                $push: { friends: friend._id },
+                $pull: { friendRequests: { from: friend._id } }
+              },
+              { new: true }
+            ).exec(),
+            User.findByIdAndUpdate(
+              friend._id,
+              { $push: { friends: currentUser._id } },
+              { new: true }
+            ).exec()
+          ]);
 
-        if (!updatedUser || !updatedFriend) {
-          console.error('\nFailed to update documents:', {
-            updatedUser: !!updatedUser,
-            updatedFriend: !!updatedFriend
+          logger.info('Updates successful');
+          logger.debug('Updated user friends:', updatedUser?.friends);
+
+          return res.status(200).json({ 
+            message: 'Friend request accepted successfully',
+            friend: {
+              id: friend._id,
+              name: friend.name,
+              username: friend.username,
+              email: friend.email
+            }
           });
-          throw new Error('Failed to update user or friend');
+        } catch (updateError) {
+          logger.error('Error during user updates:', updateError);
+          throw updateError;
         }
-
-        console.log('\nSuccessfully updated both users');
-        console.log('Updated user friends:', updatedUser.friends);
-        console.log('=== END: Friend Request Acceptance ===\n');
-
-        return res.status(200).json({ 
-          message: 'Friend request accepted',
-          friend: {
-            id: friend._id,
-            name: friend.name,
-            username: friend.username,
-            email: friend.email,
-            lastCheckIn: friend.lastCheckIn,
-          }
-        });
       } catch (error) {
-        console.error('Error accepting friend request:', error);
-        return res.status(500).json({ message: 'Error accepting friend request' });
+        logger.error('Error accepting friend request:', error);
+        return res.status(500).json({ 
+          message: 'Error accepting friend request',
+          error: error instanceof Error ? error.message : 'Unknown error'
+        });
       }
     }
 
-    // DELETE: Reject a friend request or remove a friend
+    // DELETE: Reject/remove a friend request
     if (req.method === 'DELETE') {
       try {
-        const friend = await User.findOne({ username: username.toLowerCase() });
-        if (!friend) {
+        logger.info('=== START: Friend Request Rejection ===');
+        logger.debug('Request body:', req.body);
+        
+        const { username, userId } = req.body;
+        
+        if (!username && !userId) {
+          logger.error('No username or userId provided');
+          return res.status(400).json({ message: 'Username or userId is required' });
+        }
+
+        // First get the fully populated user document
+        logger.debug('Fetching current user with populated data...');
+        const currentUser = await User.findById(user._id)
+          .populate({
+            path: 'friendRequests.from',
+            select: 'name email username'
+          })
+          .exec();
+
+        if (!currentUser) {
+          logger.error('Could not find current user with populated data');
+          return res.status(500).json({ message: 'Error loading user data' });
+        }
+
+        let requestToRemove;
+        if (userId) {
+          // Find by ID
+          requestToRemove = currentUser.friendRequests.find(
+            request => request.from._id.toString() === userId
+          );
+        } else {
+          // Find by username
+          requestToRemove = currentUser.friendRequests.find(
+            request => request.from.username?.toLowerCase() === username.toLowerCase()
+          );
+        }
+
+        if (!requestToRemove) {
+          logger.error('No friend request found to reject:', { username, userId });
+          return res.status(400).json({ message: 'No friend request found from this user' });
+        }
+
+        logger.debug('Found request to remove:', {
+          from: {
+            id: requestToRemove.from._id,
+            name: requestToRemove.from.name,
+            email: requestToRemove.from.email
+          }
+        });
+
+        // Remove the request
+        await User.findByIdAndUpdate(
+          currentUser._id,
+          {
+            $pull: { friendRequests: { from: requestToRemove.from._id } }
+          },
+          { new: true }
+        );
+
+        logger.info('Friend request rejected successfully');
+        return res.status(200).json({ message: 'Friend request rejected' });
+      } catch (error) {
+        logger.error('Error rejecting friend request:', error);
+        return res.status(500).json({ message: 'Error rejecting friend request' });
+      }
+    }
+
+    // PATCH: Update user (temporary endpoint for fixing lilo's username)
+    if (req.method === 'PATCH') {
+      try {
+        logger.info('=== START: User Update ===');
+        
+        // Only allow updating lilo's record
+        const liloId = '684ebc174ef1c1e06472b747';
+        
+        const updatedUser = await User.findByIdAndUpdate(
+          liloId,
+          { 
+            $set: { 
+              username: 'lilo_stitch',
+            }
+          },
+          { new: true }
+        );
+
+        if (!updatedUser) {
+          logger.error('Could not find lilo\'s user record');
           return res.status(404).json({ message: 'User not found' });
         }
 
-        // Check if it's a friend request rejection
-        const requestIndex = user.friendRequests.findIndex(
-          (request: any) => request.from.toString() === friend._id.toString()
-        );
-
-        if (requestIndex !== -1) {
-          // Reject friend request
-          await User.findByIdAndUpdate(
-            user._id,
-            {
-              $pull: { friendRequests: { from: friend._id } },
-            },
-            { new: true }
-          );
-
-          return res.status(200).json({ message: 'Friend request rejected' });
-        }
-
-        // If not a request, remove from friends list
-        const [updatedUser, updatedFriend] = await Promise.all([
-          User.findByIdAndUpdate(
-            user._id,
-            {
-              $pull: { friends: friend._id },
-            },
-            { new: true }
-          ),
-          User.findByIdAndUpdate(
-            friend._id,
-            {
-              $pull: { friends: user._id },
-            },
-            { new: true }
-          )
-        ]);
-
-        if (!updatedUser || !updatedFriend) {
-          throw new Error('Failed to update user or friend');
-        }
-
-        return res.status(200).json({ message: 'Friend removed successfully' });
+        logger.info('Successfully updated lilo\'s username');
+        return res.status(200).json({ 
+          message: 'Username updated successfully',
+          user: {
+            id: updatedUser._id,
+            name: updatedUser.name,
+            username: updatedUser.username,
+            email: updatedUser.email
+          }
+        });
       } catch (error) {
-        console.error('Error handling friend request/removal:', error);
-        return res.status(500).json({ message: 'Error processing friend operation' });
+        logger.error('Error updating user:', error);
+        return res.status(500).json({ message: 'Error updating user' });
       }
     }
   } catch (error) {

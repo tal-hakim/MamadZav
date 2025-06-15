@@ -4,5 +4,9 @@
   "/_document": "pages/_document.js",
   "/": "pages/index.js",
   "/login": "pages/login.js",
+  "/api/user/check-in": "pages/api/user/check-in.js",
+  "/api/user/friends": "pages/api/user/friends.js",
+  "/api/auth/login": "pages/api/auth/login.js",
+  "/api/user/ping": "pages/api/user/ping.js",
   "/test-friends": "pages/test-friends.js"
 }
