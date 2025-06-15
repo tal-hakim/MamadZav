@@ -16,6 +16,7 @@ import {
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/router';
 import axios from 'axios';
+import ProfileCircle from '@/components/ProfileCircle';
 
 interface Friend {
   id: string;
@@ -251,10 +252,13 @@ export default function Home() {
               {friendRequests.map((request) => (
                 <Box key={request.id} p={4} borderWidth={1} borderRadius="lg">
                   <Flex justify="space-between" align="center">
-                    <Box>
-                      <Text fontWeight="bold">{request.name}</Text>
-                      <Text color="gray.600">@{request.username || 'No username'}</Text>
-                    </Box>
+                    <Flex gap={3} align="flex-start">
+                      <ProfileCircle name={request.name} />
+                      <Box>
+                        <Text fontWeight="bold">{request.name}</Text>
+                        <Text color="gray.600">@{request.username || 'No username'}</Text>
+                      </Box>
+                    </Flex>
                     <Flex gap={2}>
                       <Button
                         colorScheme="green"
@@ -279,60 +283,124 @@ export default function Home() {
         )}
 
         <Box>
-          <Heading size="md" mb={4}>
-            Friends Status
-          </Heading>
-          {loadingFriends ? (
-            <Flex justify="center" py={8}>
-              <Spinner />
-            </Flex>
-          ) : friends.length === 0 ? (
-            <Text color="gray.500" textAlign="center">
-              No friends added yet
-            </Text>
-          ) : (
-            <Grid templateColumns="repeat(auto-fill, minmax(300px, 1fr))" gap={4}>
-              {friends.map((friend) => (
-                <GridItem
-                  key={friend.id}
-                  p={4}
-                  borderWidth={1}
-                  borderRadius="md"
-                  boxShadow="sm"
-                >
-                  <Flex justify="space-between" align="center">
-                    <Box>
-                      <Text fontWeight="bold">{friend.name}</Text>
-                      <Text fontSize="sm" color="gray.600" mb={1}>@{friend.username}</Text>
-                      <Badge
-                        colorScheme={
-                          friend.lastCheckIn
-                            ? new Date().getTime() - new Date(friend.lastCheckIn).getTime() < 3600000
-                              ? 'green'
-                              : 'yellow'
-                            : 'red'
-                        }
-                      >
-                        {friend.lastCheckIn
-                          ? `Last check-in: ${new Date(friend.lastCheckIn).toLocaleString()}`
-                          : 'No check-in'}
-                      </Badge>
-                    </Box>
-                    {(!friend.lastCheckIn ||
-                      new Date().getTime() - new Date(friend.lastCheckIn).getTime() > 3600000) && (
-                      <Button
-                        size="sm"
-                        colorScheme="blue"
-                        onClick={() => handlePing(friend.id)}
-                      >
-                        Ping
-                      </Button>
-                    )}
-                  </Flex>
-                </GridItem>
-              ))}
-            </Grid>
-          )}
+          <Grid templateColumns="repeat(2, 1fr)" gap={8}>
+            {/* Recently Checked In Friends */}
+            <GridItem>
+              <Box bg="white" p={6} borderRadius="lg" boxShadow="sm" height="100%">
+                <Heading size="md" mb={4} color="green.500">
+                  Recently Safe ({friends.filter(friend => 
+                    friend.lastCheckIn && 
+                    new Date().getTime() - new Date(friend.lastCheckIn).getTime() < 10800000 // 3 hours
+                  ).length})
+                </Heading>
+                <VStack spacing={4} align="stretch">
+                  {loadingFriends ? (
+                    <Flex justify="center" py={8}>
+                      <Spinner />
+                    </Flex>
+                  ) : friends.filter(friend => 
+                      friend.lastCheckIn && 
+                      new Date().getTime() - new Date(friend.lastCheckIn).getTime() < 10800000
+                    ).length === 0 ? (
+                    <Text color="gray.500" textAlign="center">
+                      No friends have checked in recently
+                    </Text>
+                  ) : (
+                    friends
+                      .filter(friend => 
+                        friend.lastCheckIn && 
+                        new Date().getTime() - new Date(friend.lastCheckIn).getTime() < 10800000
+                      )
+                      .map((friend) => (
+                        <Box
+                          key={friend.id}
+                          p={4}
+                          borderWidth={1}
+                          borderRadius="md"
+                          bg="green.50"
+                        >
+                          <Flex justify="space-between" align="center">
+                            <Flex gap={3} align="flex-start">
+                              <ProfileCircle name={friend.name} />
+                              <Box>
+                                <Text fontWeight="bold">{friend.name}</Text>
+                                <Text fontSize="sm" color="gray.600" mb={1}>@{friend.username}</Text>
+                                <Text fontSize="sm" color="green.600">
+                                  Last check-in: {new Date(friend.lastCheckIn!).toLocaleString()}
+                                </Text>
+                              </Box>
+                            </Flex>
+                          </Flex>
+                        </Box>
+                      ))
+                  )}
+                </VStack>
+              </Box>
+            </GridItem>
+
+            {/* Friends Who Need to Check In */}
+            <GridItem>
+              <Box bg="white" p={6} borderRadius="lg" boxShadow="sm" height="100%">
+                <Heading size="md" mb={4} color="red.500">
+                  Need to Check In ({friends.filter(friend => 
+                    !friend.lastCheckIn || 
+                    new Date().getTime() - new Date(friend.lastCheckIn).getTime() >= 10800000
+                  ).length})
+                </Heading>
+                <VStack spacing={4} align="stretch">
+                  {loadingFriends ? (
+                    <Flex justify="center" py={8}>
+                      <Spinner />
+                    </Flex>
+                  ) : friends.filter(friend => 
+                      !friend.lastCheckIn || 
+                      new Date().getTime() - new Date(friend.lastCheckIn).getTime() >= 10800000
+                    ).length === 0 ? (
+                    <Text color="gray.500" textAlign="center">
+                      All friends have checked in recently
+                    </Text>
+                  ) : (
+                    friends
+                      .filter(friend => 
+                        !friend.lastCheckIn || 
+                        new Date().getTime() - new Date(friend.lastCheckIn).getTime() >= 10800000
+                      )
+                      .map((friend) => (
+                        <Box
+                          key={friend.id}
+                          p={4}
+                          borderWidth={1}
+                          borderRadius="md"
+                          bg="red.50"
+                        >
+                          <Flex justify="space-between" align="center">
+                            <Flex gap={3} align="flex-start">
+                              <ProfileCircle name={friend.name} />
+                              <Box>
+                                <Text fontWeight="bold">{friend.name}</Text>
+                                <Text fontSize="sm" color="gray.600" mb={1}>@{friend.username}</Text>
+                                <Text fontSize="sm" color="red.600">
+                                  {friend.lastCheckIn
+                                    ? `Last check-in: ${new Date(friend.lastCheckIn).toLocaleString()}`
+                                    : 'No check-in yet'}
+                                </Text>
+                              </Box>
+                            </Flex>
+                            <Button
+                              size="sm"
+                              colorScheme="blue"
+                              onClick={() => handlePing(friend.id)}
+                            >
+                              Ping
+                            </Button>
+                          </Flex>
+                        </Box>
+                      ))
+                  )}
+                </VStack>
+              </Box>
+            </GridItem>
+          </Grid>
         </Box>
       </VStack>
     </Container>

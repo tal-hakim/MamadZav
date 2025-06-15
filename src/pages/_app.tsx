@@ -1,12 +1,12 @@
-import { ChakraProvider, CSSReset } from '@chakra-ui/react';
+import { ChakraProvider } from '@chakra-ui/react';
 import { AppProps } from 'next/app';
 import { AuthProvider } from '@/contexts/AuthContext';
 import Layout from '@/components/Layout';
+import theme from '../theme';
 
 function MyApp({ Component, pageProps }: AppProps) {
   return (
-    <ChakraProvider>
-      <CSSReset />
+    <ChakraProvider theme={theme}>
       <AuthProvider>
         <Layout>
           <Component {...pageProps} />

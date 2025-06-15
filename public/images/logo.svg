@@ -1,0 +1,23 @@
+<!-- MamadZav Turtle Logo -->
+<svg width="400" height="400" viewBox="0 0 400 400" xmlns="http://www.w3.org/2000/svg">
+  <!-- Red arch background -->
+  <path d="M50 350 Q200 100 350 350" fill="#E74C3C" />
+  
+  <!-- White checkmark -->
+  <path d="M175 200 L225 250 L275 150" stroke="white" stroke-width="20" fill="none" />
+  
+  <!-- Green turtle -->
+  <g transform="translate(100, 200)">
+    <!-- Shell -->
+    <path d="M100,50 Q150,0 200,50 Q220,100 200,150 Q150,200 100,150 Q80,100 100,50" fill="#2ECC71" />
+    <!-- Head -->
+    <circle cx="90" cy="90" r="25" fill="#2ECC71" />
+    <!-- Smile -->
+    <path d="M80 90 Q90 100 100 90" stroke="#1D8348" stroke-width="3" fill="none" />
+    <!-- Eye -->
+    <circle cx="85" cy="85" r="3" fill="#1D8348" />
+  </g>
+  
+  <!-- Text -->
+  <text x="200" y="380" font-family="Arial" font-size="48" text-anchor="middle" fill="black">פצ"ן</text>
+</svg> 

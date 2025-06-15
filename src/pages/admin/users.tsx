@@ -14,10 +14,12 @@ import {
   Badge,
   Spinner,
   useToast,
+  Flex,
 } from '@chakra-ui/react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/router';
 import axios from 'axios';
+import ProfileCircle from '@/components/ProfileCircle';
 
 interface User {
   id: string;
@@ -96,8 +98,7 @@ export default function AdminUsers() {
           <Table variant="simple">
             <Thead>
               <Tr>
-                <Th>Name</Th>
-                <Th>Username</Th>
+                <Th>User</Th>
                 <Th>Email</Th>
                 <Th>Friends</Th>
                 <Th>Friend Requests</Th>
@@ -108,8 +109,15 @@ export default function AdminUsers() {
             <Tbody>
               {users.map((user) => (
                 <Tr key={user.id}>
-                  <Td>{user.name}</Td>
-                  <Td>@{user.username}</Td>
+                  <Td>
+                    <Flex gap={3} align="flex-start">
+                      <ProfileCircle name={user.name} size="32px" fontSize="14px" />
+                      <Box>
+                        <Text fontWeight="bold">{user.name}</Text>
+                        <Text fontSize="sm" color="gray.600">@{user.username}</Text>
+                      </Box>
+                    </Flex>
+                  </Td>
                   <Td>{user.email}</Td>
                   <Td>{user.friends}</Td>
                   <Td>

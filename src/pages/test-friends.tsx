@@ -15,6 +15,7 @@ import {
 } from '@chakra-ui/react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/router';
+import ProfileCircle from '@/components/ProfileCircle';
 
 interface FriendRequest {
   id: string;
@@ -201,10 +202,13 @@ export default function TestFriends() {
                   boxShadow="sm"
                 >
                   <VStack align="stretch" spacing={3}>
-                    <Box>
-                      <Text fontWeight="bold">{request.name}</Text>
-                      <Text color="gray.600">@{request.username}</Text>
-                    </Box>
+                    <Flex gap={3} align="flex-start">
+                      <ProfileCircle name={request.name} />
+                      <Box>
+                        <Text fontWeight="bold">{request.name}</Text>
+                        <Text color="gray.600">@{request.username}</Text>
+                      </Box>
+                    </Flex>
                     <HStack spacing={4}>
                       <Button
                         colorScheme="green"

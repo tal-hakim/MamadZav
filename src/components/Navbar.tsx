@@ -5,6 +5,8 @@ import {
   Stack,
   useColorModeValue,
   Text,
+  HStack,
+  Image,
 } from '@chakra-ui/react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/router';
@@ -22,24 +24,33 @@ export default function Navbar() {
 
   return (
     <Box
-      bg={bgColor}
+      bg="#f9f1e2"
       px={4}
-      borderBottom={1}
-      borderStyle={'solid'}
-      borderColor={borderColor}
+      shadow="sm"
       position="sticky"
       top={0}
       zIndex={1000}
     >
-      <Flex h={16} alignItems={'center'} justifyContent={'space-between'}>
-        <Text
-          fontSize="xl"
-          fontWeight="bold"
-          cursor="pointer"
-          onClick={() => router.push('/')}
-        >
-          Safety Check
-        </Text>
+      <Flex h={32} alignItems={'center'} justifyContent={'space-between'}>
+        <HStack spacing={4} alignItems="center">
+          <Image 
+            src="/images/logo.png" 
+            alt="MamadZav Logo" 
+            height="110px"
+            width="110px"
+            cursor="pointer"
+            onClick={() => router.push('/')}
+          />
+          <Text
+            fontSize="5xl"
+            fontWeight="bold"
+            fontFamily="'Varela Round', sans-serif"
+            cursor="pointer"
+            onClick={() => router.push('/')}
+          >
+            MamadZav
+          </Text>
+        </HStack>
 
         <Stack direction={'row'} spacing={4}>
           {user ? (
