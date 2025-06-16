@@ -1,15 +1,16 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import jwt from 'jsonwebtoken';
 import { User, IUser } from '@/models/User';
+import { Types } from 'mongoose';
 
-const JWT_SECRET = process.env.JWT_SECRET;
-
-if (!JWT_SECRET) {
+if (!process.env.JWT_SECRET) {
   throw new Error('Please define the JWT_SECRET environment variable inside .env.local');
 }
 
+const JWT_SECRET = process.env.JWT_SECRET;
+
 export interface AuthenticatedRequest extends NextApiRequest {
-  user?: IUser;
+  user?: IUser & { _id: Types.ObjectId };
 }
 
 export async function authMiddleware(
@@ -31,8 +32,17 @@ export async function authMiddleware(
     const token = authHeader.split(' ')[1];
     console.log('Token received, verifying...');
     
-    const decoded = jwt.verify(token, JWT_SECRET) as { id: string };
-    console.log('Token verified, user ID:', decoded.id);
+    let decoded;
+    try {
+      decoded = jwt.verify(token, JWT_SECRET!) as { id: string };
+      console.log('Token verified, user ID:', decoded.id);
+    } catch (error) {
+      console.error('Token verification error:', error);
+      if (error instanceof jwt.TokenExpiredError) {
+        return res.status(401).json({ message: 'Token expired' });
+      }
+      return res.status(401).json({ message: 'Invalid token' });
+    }
 
     const user = await User.findById(decoded.id).select('-password');
     if (!user) {
@@ -57,15 +67,13 @@ export async function authMiddleware(
     }
   } catch (error) {
     console.error('Auth middleware error:', error);
-    if (error instanceof jwt.JsonWebTokenError) {
-      return res.status(401).json({ message: 'Invalid token' });
-    } else if (error instanceof jwt.TokenExpiredError) {
-      return res.status(401).json({ message: 'Token expired' });
-    }
-    return res.status(401).json({ message: 'Authentication failed' });
+    return res.status(500).json({ 
+      message: 'Authentication failed',
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
   }
 }
 
 export function generateToken(userId: string): string {
-  return jwt.sign({ id: userId }, JWT_SECRET, { expiresIn: '7d' });
+  return jwt.sign({ id: userId }, JWT_SECRET!, { expiresIn: '7d' });
 } 

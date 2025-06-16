@@ -12,10 +12,15 @@ import {
   Heading,
   Divider,
   HStack,
+  InputGroup,
+  InputLeftElement,
+  List,
+  ListItem,
 } from '@chakra-ui/react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/router';
 import ProfileCircle from '@/components/ProfileCircle';
+import { SearchIcon } from '@chakra-ui/icons';
 
 interface FriendRequest {
   id: string;
@@ -25,8 +30,17 @@ interface FriendRequest {
   createdAt: string;
 }
 
+interface User {
+  id: string;
+  name: string;
+  username: string;
+  email: string;
+}
+
 export default function TestFriends() {
-  const [username, setUsername] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchResults, setSearchResults] = useState<User[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isFetching, setIsFetching] = useState(true);
   const [friendRequests, setFriendRequests] = useState<FriendRequest[]>([]);
@@ -45,6 +59,45 @@ export default function TestFriends() {
       fetchFriendRequests();
     }
   }, [user]);
+
+  useEffect(() => {
+    const searchUsers = async () => {
+      if (!searchQuery.trim()) {
+        setSearchResults([]);
+        return;
+      }
+
+      try {
+        setIsSearching(true);
+        const response = await fetch(`/api/user/search?q=${encodeURIComponent(searchQuery)}`, {
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem('token')}`,
+          },
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to search users');
+        }
+
+        const data = await response.json();
+        setSearchResults(data.users || []);
+      } catch (error) {
+        console.error('Error searching users:', error);
+        toast({
+          title: 'Error searching users',
+          description: error instanceof Error ? error.message : 'Something went wrong',
+          status: 'error',
+          duration: 3000,
+        });
+        setSearchResults([]);
+      } finally {
+        setIsSearching(false);
+      }
+    };
+
+    const debounceTimeout = setTimeout(searchUsers, 300);
+    return () => clearTimeout(debounceTimeout);
+  }, [searchQuery, toast]);
 
   const fetchFriendRequests = async () => {
     try {
@@ -75,7 +128,7 @@ export default function TestFriends() {
     }
   };
 
-  const sendFriendRequest = async () => {
+  const sendFriendRequest = async (username: string) => {
     try {
       setIsLoading(true);
       const response = await fetch('/api/user/friends', {
@@ -100,8 +153,9 @@ export default function TestFriends() {
         duration: 3000,
       });
 
-      // Clear input
-      setUsername('');
+      // Clear search results
+      setSearchQuery('');
+      setSearchResults([]);
     } catch (error) {
       toast({
         title: 'Error',
@@ -169,21 +223,55 @@ export default function TestFriends() {
           <Heading size="lg" mb={4}>Add Friends</Heading>
           <VStack spacing={4}>
             <Box w="full">
-              <Input
-                placeholder="Enter username to add (e.g. israel_israeli)"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-              />
+              <InputGroup>
+                <InputLeftElement pointerEvents="none">
+                  <SearchIcon color="gray.300" />
+                </InputLeftElement>
+                <Input
+                  placeholder="Search users by name or username..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
+              </InputGroup>
             </Box>
-            <Button
-              colorScheme="blue"
-              onClick={sendFriendRequest}
-              isLoading={isLoading}
-              isDisabled={!username}
-              w="full"
-            >
-              Send Friend Request
-            </Button>
+            
+            {isSearching ? (
+              <Flex justify="center" w="full" py={4}>
+                <Spinner />
+              </Flex>
+            ) : searchResults.length > 0 ? (
+              <List spacing={2} w="full">
+                {searchResults.map((result) => (
+                  <ListItem
+                    key={result.id}
+                    p={3}
+                    bg="white"
+                    borderRadius="md"
+                    boxShadow="sm"
+                  >
+                    <Flex justify="space-between" align="center">
+                      <Flex align="center" gap={3}>
+                        <ProfileCircle name={result.name} />
+                        <Box>
+                          <Text fontWeight="bold">{result.name}</Text>
+                          <Text fontSize="sm" color="gray.600">@{result.username}</Text>
+                        </Box>
+                      </Flex>
+                      <Button
+                        size="sm"
+                        colorScheme="blue"
+                        onClick={() => sendFriendRequest(result.username)}
+                        isLoading={isLoading}
+                      >
+                        Add Friend
+                      </Button>
+                    </Flex>
+                  </ListItem>
+                ))}
+              </List>
+            ) : searchQuery && !isSearching ? (
+              <Text color="gray.500" textAlign="center">No users found</Text>
+            ) : null}
           </VStack>
         </Box>
 
@@ -198,40 +286,39 @@ export default function TestFriends() {
                   key={request.id}
                   p={4}
                   borderWidth={1}
-                  borderRadius="lg"
-                  boxShadow="sm"
+                  borderRadius="md"
+                  bg="white"
                 >
-                  <VStack align="stretch" spacing={3}>
-                    <Flex gap={3} align="flex-start">
+                  <Flex justify="space-between" align="center">
+                    <Flex align="center" gap={3}>
                       <ProfileCircle name={request.name} />
                       <Box>
                         <Text fontWeight="bold">{request.name}</Text>
-                        <Text color="gray.600">@{request.username}</Text>
+                        <Text fontSize="sm" color="gray.600">@{request.username}</Text>
                       </Box>
                     </Flex>
-                    <HStack spacing={4}>
+                    <HStack>
                       <Button
-                        colorScheme="green"
                         size="sm"
+                        colorScheme="green"
                         onClick={() => handleFriendRequest(request.username, 'accept')}
                       >
                         Accept
                       </Button>
                       <Button
-                        colorScheme="red"
-                        variant="outline"
                         size="sm"
+                        variant="ghost"
                         onClick={() => handleFriendRequest(request.username, 'reject')}
                       >
                         Reject
                       </Button>
                     </HStack>
-                  </VStack>
+                  </Flex>
                 </Box>
               ))}
             </VStack>
           ) : (
-            <Text color="gray.600">No pending friend requests</Text>
+            <Text color="gray.500">No pending friend requests</Text>
           )}
         </Box>
       </VStack>

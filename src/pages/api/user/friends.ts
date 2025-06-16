@@ -16,15 +16,17 @@ interface FriendRequest {
   createdAt: Date;
 }
 
+interface Friend {
+  _id: Types.ObjectId;
+  name: string;
+  username: string;
+  email: string;
+  lastCheckIn?: Date;
+}
+
 interface PopulatedUser extends Omit<IUser, 'friends' | 'friendRequests'> {
   _id: Types.ObjectId;
-  friends: Array<{
-    _id: Types.ObjectId;
-    name: string;
-    username: string;
-    email: string;
-    lastCheckIn: Date | null;
-  }>;
+  friends: Friend[];
   friendRequests: FriendRequest[];
 }
 
@@ -230,14 +232,14 @@ async function handler(
         // Check if friend request exists by ID
         logger.debug('Looking for friend request...');
         const pendingRequest = currentUser.friendRequests.find(
-          (request) => request.from._id.toString() === friend._id.toString()
+          (request: FriendRequest) => request.from._id.toString() === friend._id.toString()
         );
 
         if (!pendingRequest) {
           logger.error('No friend request found for user:', {
             friendId: friend._id,
             username: friend.username,
-            availableRequests: currentUser.friendRequests.map(r => ({
+            availableRequests: currentUser.friendRequests.map((r: FriendRequest) => ({
               id: r.from._id,
               username: r.from.username
             }))
@@ -246,7 +248,7 @@ async function handler(
             message: 'No friend request found from this user',
             debug: {
               requestedUsername: username,
-              availableRequests: currentUser.friendRequests.map(r => r.from.username)
+              availableRequests: currentUser.friendRequests.map((r: FriendRequest) => r.from.username)
             }
           });
         }
@@ -302,10 +304,10 @@ async function handler(
       }
     }
 
-    // DELETE: Reject/remove a friend request
+    // DELETE: Reject/remove a friend request or remove a friend
     if (req.method === 'DELETE') {
       try {
-        logger.info('=== START: Friend Request Rejection ===');
+        logger.info('=== START: Friend Removal/Rejection ===');
         logger.debug('Request body:', req.body);
         
         const { username, userId } = req.body;
@@ -322,6 +324,7 @@ async function handler(
             path: 'friendRequests.from',
             select: 'name email username'
           })
+          .populate('friends')
           .exec();
 
         if (!currentUser) {
@@ -329,16 +332,43 @@ async function handler(
           return res.status(500).json({ message: 'Error loading user data' });
         }
 
-        let requestToRemove;
+        // Check if this is a friend removal
+        const friendToRemove = currentUser.friends.find(
+          (friend: Friend) => friend._id.toString() === userId || friend.username === username
+        );
+
+        if (friendToRemove) {
+          logger.info('Removing friend:', friendToRemove);
+          
+          // Remove friend from both users' friend lists
+          await Promise.all([
+            User.findByIdAndUpdate(
+              currentUser._id,
+              { $pull: { friends: friendToRemove._id } },
+              { new: true }
+            ),
+            User.findByIdAndUpdate(
+              friendToRemove._id,
+              { $pull: { friends: currentUser._id } },
+              { new: true }
+            )
+          ]);
+
+          logger.info('Friend removed successfully');
+          return res.status(200).json({ message: 'Friend removed successfully' });
+        }
+
+        // If not a friend removal, check for friend request rejection
+        let requestToRemove: FriendRequest | undefined;
         if (userId) {
           // Find by ID
           requestToRemove = currentUser.friendRequests.find(
-            request => request.from._id.toString() === userId
+            (request: FriendRequest) => request.from._id.toString() === userId
           );
         } else {
           // Find by username
           requestToRemove = currentUser.friendRequests.find(
-            request => request.from.username?.toLowerCase() === username.toLowerCase()
+            (request: FriendRequest) => request.from.username?.toLowerCase() === username.toLowerCase()
           );
         }
 
@@ -367,8 +397,8 @@ async function handler(
         logger.info('Friend request rejected successfully');
         return res.status(200).json({ message: 'Friend request rejected' });
       } catch (error) {
-        logger.error('Error rejecting friend request:', error);
-        return res.status(500).json({ message: 'Error rejecting friend request' });
+        logger.error('Error in friend removal/rejection:', error);
+        return res.status(500).json({ message: 'Error processing friend removal/rejection' });
       }
     }
 

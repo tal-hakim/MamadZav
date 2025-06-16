@@ -54,3 +54,32 @@
   "684eb2834ef1c1e06472b6ed",
   "684ebc174ef1c1e06472b747"
 ]
+[2025-06-15T17:13:39.444Z] INFO: === START: Friend Request Acceptance ===
+[2025-06-15T17:13:39.478Z] DEBUG: Request body:
+{
+  "username": "talh"
+}
+[2025-06-15T17:13:39.506Z] DEBUG: Username from request:
+"talh"
+[2025-06-15T17:13:39.522Z] DEBUG: Current user:
+{
+  "id": "684ebc174ef1c1e06472b747",
+  "username": "lilo_stitch"
+}
+[2025-06-15T17:13:39.528Z] DEBUG: Fetching current user with populated data...
+[2025-06-15T17:13:40.195Z] DEBUG: Looking for friend request...
+[2025-06-15T17:13:40.197Z] DEBUG: Found pending request:
+{
+  "from": {
+    "id": "684eff0bd0c64bbc319ca683",
+    "username": "talh"
+  }
+}
+[2025-06-15T17:13:40.228Z] INFO: Updating both users...
+[2025-06-15T17:13:40.509Z] INFO: Updates successful
+[2025-06-15T17:13:40.517Z] DEBUG: Updated user friends:
+[
+  "684eb2834ef1c1e06472b6ed",
+  "684eb2244ef1c1e06472b6ea",
+  "684eff0bd0c64bbc319ca683"
+]
