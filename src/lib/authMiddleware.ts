@@ -1,6 +1,6 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import jwt from 'jsonwebtoken';
-import { connectToDatabase } from './mongodb';
+import dbConnect from './mongodb';
 import { ObjectId } from 'mongodb';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
@@ -45,7 +45,7 @@ export const authMiddleware = (handler: Handler) => {
         const decoded = jwt.verify(token, JWT_SECRET) as { userId: string };
         
         // Get user from database
-        const { db } = await connectToDatabase();
+        const { db } = await dbConnect();
         const user = await db.collection('users').findOne(
           { _id: new ObjectId(decoded.userId) },
           { projection: { password: 0 } }

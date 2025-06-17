@@ -153,18 +153,31 @@ export default function Home() {
       console.log('Accepting friend request for:', username);
       const token = localStorage.getItem('token');
       if (!token) {
+        console.error('No token found');
         throw new Error('No authentication token found');
       }
 
       console.log('Sending PUT request to /api/user/friends');
+      console.log('Request details:', {
+        url: '/api/user/friends',
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${token}` },
+        body: { username }
+      });
+
       const response = await axios.put('/api/user/friends', 
         { username },
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      console.log('Response:', response.data);
+      
+      console.log('Response:', {
+        status: response.status,
+        data: response.data
+      });
 
       toast({
         title: 'Friend request accepted',
+        description: 'Friend request accepted successfully',
         status: 'success',
         duration: 3000,
       });
@@ -173,14 +186,20 @@ export default function Home() {
       await fetchFriends();
       console.log('Friends list refreshed');
     } catch (error) {
-      console.error('Error accepting friend request:', error);
-      handleAuthError(error);
+      console.error('Error accepting friend request:', {
+        error,
+        response: error.response?.data,
+        status: error.response?.status
+      });
+      
+      const errorMessage = error.response?.data?.message || error.message || 'Unknown error occurred';
       
       toast({
         title: 'Error accepting friend request',
-        description: error instanceof Error ? error.message : 'Unknown error occurred',
+        description: errorMessage,
         status: 'error',
-        duration: 3000,
+        duration: 5000,
+        isClosable: true,
       });
     }
   };

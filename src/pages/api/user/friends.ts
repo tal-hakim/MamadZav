@@ -1,5 +1,5 @@
 import { NextApiResponse } from 'next';
-import dbConnect from '@/lib/db';
+import dbConnect from '@/lib/mongodb';
 import { User, IUser } from '@/models/User';
 import { authMiddleware, AuthenticatedRequest } from '@/middleware/auth';
 import { Types } from 'mongoose';
@@ -202,6 +202,8 @@ async function handler(
         logger.debug('Request body:', req.body);
         logger.debug('Username from request:', username);
         logger.debug('Current user:', { id: user._id, username: user.username });
+        logger.debug('Headers:', req.headers);
+        logger.debug('MongoDB URI:', process.env.MONGODB_URI ? 'Set' : 'Not set');
 
         if (!username) {
           logger.error('No username provided in request');
@@ -222,12 +224,25 @@ async function handler(
           return res.status(500).json({ message: 'Error loading user data' });
         }
 
+        logger.debug('Current user data:', {
+          id: currentUser._id,
+          friendRequests: currentUser.friendRequests.map(r => ({
+            from: r.from,
+            createdAt: r.createdAt
+          }))
+        });
+
         // Find the friend by username first
         const friend = await User.findOne({ username: username.toLowerCase() });
         if (!friend) {
           logger.error('Friend not found with username:', username);
           return res.status(404).json({ message: 'User not found' });
         }
+
+        logger.debug('Found friend:', {
+          id: friend._id,
+          username: friend.username
+        });
 
         // Check if friend request exists by ID
         logger.debug('Looking for friend request...');
