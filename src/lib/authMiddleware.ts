@@ -1,74 +1,50 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import jwt from 'jsonwebtoken';
-import dbConnect from './mongodb';
-import { ObjectId } from 'mongodb';
+import { NextResponse } from 'next/server';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
-
-interface User {
-  _id: ObjectId;
-  name: string;
-  email: string;
-  username: string;
-  friends?: ObjectId[];
-  friendRequests?: Array<{
-    from: ObjectId;
-    createdAt: Date;
-  }>;
+export interface AuthenticatedRequest extends NextApiRequest {
+  user?: {
+    userId: string;
+    email: string;
+  };
 }
 
-// Extend NextApiRequest to include the user property
-declare module 'next' {
-  interface NextApiRequest {
-    user?: User;
+export async function authMiddleware(
+  req: AuthenticatedRequest,
+  res: NextApiResponse,
+  next: () => Promise<void>
+) {
+  try {
+    const token = req.headers.authorization?.split(' ')[1];
+
+    if (!token) {
+      return res.status(401).json({ error: 'No token provided' });
+    }
+
+    if (!process.env.JWT_SECRET) {
+      throw new Error('JWT_SECRET is not defined');
+    }
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET) as {
+      userId: string;
+      email: string;
+    };
+
+    req.user = decoded;
+    await next();
+  } catch (error) {
+    if (error instanceof jwt.JsonWebTokenError) {
+      return res.status(401).json({ error: 'Invalid token' });
+    }
+    return res.status(500).json({ error: 'Internal server error' });
   }
 }
 
-type Handler = (req: NextApiRequest, res: NextApiResponse) => Promise<void> | void;
-
-export const authMiddleware = (handler: Handler) => {
-  return async (req: NextApiRequest, res: NextApiResponse) => {
-    try {
-      // Get the token from the Authorization header
-      const authHeader = req.headers.authorization;
-      if (!authHeader || !authHeader.startsWith('Bearer ')) {
-        return res.status(401).json({ message: 'No token provided' });
-      }
-
-      const token = authHeader.split(' ')[1];
-      if (!token) {
-        return res.status(401).json({ message: 'Invalid token format' });
-      }
-
-      try {
-        // Verify the token
-        const decoded = jwt.verify(token, JWT_SECRET) as { userId: string };
-        
-        // Get user from database
-        const { db } = await dbConnect();
-        const user = await db.collection('users').findOne(
-          { _id: new ObjectId(decoded.userId) },
-          { projection: { password: 0 } }
-        );
-
-        if (!user) {
-          return res.status(401).json({ message: 'User not found' });
-        }
-
-        // Add user to request object
-        req.user = user as User;
-
-        // Call the actual handler
-        return handler(req, res);
-      } catch (error) {
-        if (error instanceof jwt.JsonWebTokenError) {
-          return res.status(401).json({ message: 'Invalid token' });
-        }
-        throw error;
-      }
-    } catch (error) {
-      console.error('Auth Middleware Error:', error);
-      return res.status(500).json({ message: 'Internal server error' });
-    }
+// Middleware for Next.js Edge Runtime (API routes)
+export function withAuth(handler: Function) {
+  return async function (req: AuthenticatedRequest, res: NextApiResponse) {
+    await authMiddleware(req, res, async () => {
+      await handler(req, res);
+    });
   };
-}; 
+} 

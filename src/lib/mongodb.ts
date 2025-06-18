@@ -1,41 +1,47 @@
 import mongoose from 'mongoose';
 
-const MONGODB_URI = process.env.MONGODB_URI;
+declare global {
+  var mongoose: {
+    conn: typeof mongoose | null;
+    promise: Promise<typeof mongoose> | null;
+  };
+}
 
-if (!MONGODB_URI) {
+if (!process.env.MONGODB_URI) {
   throw new Error('Please define the MONGODB_URI environment variable inside .env.local');
 }
 
-let cached = global as any;
-cached.mongoose = cached.mongoose || { conn: null, promise: null };
+const MONGODB_URI = process.env.MONGODB_URI;
 
-export async function dbConnect() {
-  if (cached.mongoose.conn) {
-    return cached.mongoose.conn;
+let cached = global.mongoose;
+
+if (!cached) {
+  cached = global.mongoose = { conn: null, promise: null };
+}
+
+async function dbConnect() {
+  if (cached.conn) {
+    return cached.conn;
   }
 
-  if (!cached.mongoose.promise) {
+  if (!cached.promise) {
     const opts = {
       bufferCommands: false,
     };
 
-    cached.mongoose.promise = mongoose.connect(MONGODB_URI as string, opts);
+    cached.promise = mongoose.connect(MONGODB_URI, opts).then((mongoose) => {
+      return mongoose;
+    });
   }
 
   try {
-    cached.mongoose.conn = await cached.mongoose.promise;
+    cached.conn = await cached.promise;
   } catch (e) {
-    cached.mongoose.promise = null;
+    cached.promise = null;
     throw e;
   }
 
-  return cached.mongoose.conn;
-}
-
-// Helper function to get a MongoDB session
-export async function getMongoSession() {
-  const conn = await dbConnect();
-  return conn.startSession();
+  return cached.conn;
 }
 
 export default dbConnect; 

@@ -1,18 +1,23 @@
-import { ChakraProvider } from '@chakra-ui/react';
+import { ChakraProvider, Box } from '@chakra-ui/react';
 import { AppProps } from 'next/app';
 import { AuthProvider } from '@/contexts/AuthContext';
 import Layout from '@/components/Layout';
 import theme from '../theme';
+import ErrorBoundary from '@/components/ErrorBoundary';
 
 function MyApp({ Component, pageProps }: AppProps) {
   return (
-    <ChakraProvider theme={theme}>
-      <AuthProvider>
-        <Layout>
-          <Component {...pageProps} />
-        </Layout>
-      </AuthProvider>
-    </ChakraProvider>
+    <ErrorBoundary>
+      <ChakraProvider theme={theme}>
+        <AuthProvider>
+          <Box minH="100vh" bg="background.primary">
+            <Layout>
+              <Component {...pageProps} />
+            </Layout>
+          </Box>
+        </AuthProvider>
+      </ChakraProvider>
+    </ErrorBoundary>
   );
 }
 

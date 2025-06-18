@@ -1,469 +1,321 @@
 import { NextApiResponse } from 'next';
 import dbConnect from '@/lib/mongodb';
-import { User, IUser } from '@/models/User';
-import { authMiddleware, AuthenticatedRequest } from '@/middleware/auth';
+import { User } from '@/models/User';
+import { authMiddleware, AuthenticatedRequest, withAuth } from '@/lib/authMiddleware';
 import { Types } from 'mongoose';
-import mongoose from 'mongoose';
-import { logger } from '@/lib/logger';
 
 interface FriendRequest {
-  from: {
-    _id: Types.ObjectId;
-    name: string;
-    username: string;
-    email: string;
-  };
+  _id: Types.ObjectId;
+  from: Types.ObjectId;
   createdAt: Date;
 }
 
 interface Friend {
   _id: Types.ObjectId;
-  name: string;
   username: string;
   email: string;
-  lastCheckIn?: Date;
+  name: string;
+  lastCheckIn: Date | null;
 }
 
-interface PopulatedUser extends Omit<IUser, 'friends' | 'friendRequests'> {
-  _id: Types.ObjectId;
-  friends: Friend[];
-  friendRequests: FriendRequest[];
-}
-
-async function handler(
-  req: AuthenticatedRequest,
-  res: NextApiResponse
-) {
+async function handler(req: AuthenticatedRequest, res: NextApiResponse) {
   console.log('Friends API called with method:', req.method);
 
-  if (!['GET', 'POST', 'DELETE', 'PUT', 'PATCH'].includes(req.method || '')) {
+  if (!['GET', 'POST', 'DELETE', 'PUT'].includes(req.method || '')) {
     return res.status(405).json({ message: 'Method not allowed' });
   }
 
   try {
     // Connect to database
-    try {
-      console.log('Attempting to connect to MongoDB...');
-      await dbConnect();
-      console.log('Successfully connected to MongoDB');
-    } catch (error) {
-      console.error('Database connection error:', error);
-      return res.status(500).json({ 
-        message: 'Database connection failed',
-        error: error instanceof Error ? error.message : 'Unknown error'
-      });
-    }
+    console.log('Attempting to connect to MongoDB...');
+    await dbConnect();
+    console.log('Successfully connected to MongoDB');
 
     if (!req.user) {
-      console.log('No user found in request');
-      return res.status(401).json({ message: 'Not authenticated' });
+      console.error('No user found in request');
+      return res.status(401).json({ message: 'Unauthorized' });
     }
 
-    console.log('User found in request:', req.user._id);
-    const user = req.user as IUser & { _id: Types.ObjectId };
+    const userId = req.user.userId;
 
-    // GET: Fetch friends list and friend requests
-    if (req.method === 'GET') {
-      try {
-        // First try to find the user without population to ensure they exist
-        console.log('Looking up user:', user._id);
-        const userExists = await User.findById(user._id);
-        if (!userExists) {
-          console.error('User not found in database:', user._id);
-          return res.status(404).json({ message: 'User not found' });
-        }
-        console.log('Found user in database');
-
-        // Then populate the data
-        console.log('Populating user data...');
-        const userWithData = await User.findById(user._id)
-          .populate({
-            path: 'friends',
-            select: 'name email username lastCheckIn'
-          })
+    switch (req.method) {
+      case 'GET':
+        console.log('Getting friend requests for user:', userId);
+        const user = await User.findById(userId)
           .populate({
             path: 'friendRequests.from',
-            select: 'name email username'
+            select: 'username email name'
           })
-          .select('friends friendRequests')
-          .lean() as PopulatedUser | null;
-
-        if (!userWithData) {
-          console.error('Failed to populate user data:', user._id);
-          return res.status(500).json({ message: 'Failed to fetch user data' });
-        }
-        console.log('Successfully populated user data');
-
-        // Safely map friends with error handling
-        console.log('Raw friends data:', userWithData.friends);
-        const friends = (userWithData.friends || [])
-          .filter(friend => friend && friend._id)
-          .map(friend => ({
-            id: friend._id.toString(),
-            name: friend.name,
-            username: friend.username,
-            email: friend.email,
-            lastCheckIn: friend.lastCheckIn,
-          }));
-        console.log('Processed friends:', friends.length);
-
-        // Safely map friend requests with error handling
-        console.log('Raw friend requests data:', userWithData.friendRequests);
-        const friendRequests = (userWithData.friendRequests || [])
-          .filter(request => request && request.from && request.from._id)
-          .map(request => ({
-            id: request.from._id.toString(),
-            name: request.from.name,
-            username: request.from.username || '',
-            email: request.from.email,
-            createdAt: request.createdAt,
-          }));
-        console.log('Processed friend requests:', friendRequests.length);
-
-        return res.status(200).json({ friends, friendRequests });
-      } catch (error) {
-        console.error('Error fetching friends and requests:', error);
-        return res.status(500).json({ 
-          message: 'Error fetching friends and requests',
-          error: error instanceof Error ? error.message : 'Unknown error'
-        });
-      }
-    }
-
-    const { username } = req.body;
-
-    if (!username) {
-      return res.status(400).json({ message: 'Username is required' });
-    }
-
-    // POST: Send a friend request
-    if (req.method === 'POST') {
-      try {
-        // Check if friend exists
-        const friend = await User.findOne({ username: username.toLowerCase() });
-        if (!friend) {
+          .populate('friends', 'username email name lastCheckIn')
+          .exec();
+        
+        if (!user) {
+          console.error('User not found:', userId);
           return res.status(404).json({ message: 'User not found' });
         }
 
-        // Can't add yourself
-        if (friend._id.toString() === user._id.toString()) {
-          return res.status(400).json({ message: 'Cannot add yourself as a friend' });
+        // Transform friend requests to ensure all required fields
+        const friendRequests = (user.friendRequests || []).map((request: any) => {
+          if (!request || !request.from) return null;
+          return {
+            id: request.from._id.toString(),
+            username: request.from.username,
+            email: request.from.email,
+            name: request.from.name,
+            createdAt: request.createdAt.toISOString()
+          };
+        }).filter(Boolean);
+
+        // Transform friends to ensure all required fields
+        const friends = (user.friends || []).map((friend: Friend) => {
+          if (!friend) return null;
+          return {
+            id: friend._id.toString(),
+            username: friend.username,
+            email: friend.email,
+            name: friend.name,
+            lastCheckIn: friend.lastCheckIn ? new Date(friend.lastCheckIn).toISOString() : null
+          };
+        }).filter(Boolean);
+
+        console.log('Found user with friend requests:', friendRequests.length);
+        return res.status(200).json({
+          friendRequests,
+          friends
+        });
+
+      case 'POST':
+        const { friendId } = req.body;
+        console.log('Sending friend request from', userId, 'to', friendId);
+
+        if (!friendId) {
+          console.error('No friendId provided in request body');
+          return res.status(400).json({ message: 'Friend ID is required' });
         }
 
-        // Check if already friends
-        const areFriends = user.friends.some(
-          (friendId: Types.ObjectId) => friendId.toString() === friend._id.toString()
-        );
-        if (areFriends) {
-          return res.status(400).json({ message: 'Already friends' });
+        const friend = await User.findById(friendId);
+        if (!friend) {
+          console.error('Friend not found:', friendId);
+          return res.status(404).json({ message: 'Friend not found' });
         }
 
-        // Check if friend request already sent
-        const existingRequest = friend.friendRequests.find(
-          (request: any) => request.from.toString() === user._id.toString()
+        friend.friendRequests = friend.friendRequests || [];
+        const requestExists = friend.friendRequests.some(
+          (request: FriendRequest) => request.from.equals(userId)
         );
-        if (existingRequest) {
+
+        if (requestExists) {
+          console.log('Friend request already sent');
           return res.status(400).json({ message: 'Friend request already sent' });
         }
 
-        // Check if they sent you a request
-        const theirRequest = user.friendRequests.find(
-          (request: any) => request.from.toString() === friend._id.toString()
-        );
-        if (theirRequest) {
+        friend.friendRequests.push({
+          from: userId,
+          createdAt: new Date()
+        });
+        await friend.save();
+        console.log('Friend request sent successfully');
+        return res.status(200).json({ message: 'Friend request sent' });
+
+      case 'PUT':
+        const { requestId } = req.body;
+        console.log('[Production Debug] === Friend Request Accept Operation ===');
+        console.log('[Production Debug] Request body:', JSON.stringify(req.body, null, 2));
+        console.log('[Production Debug] User ID:', userId);
+        console.log('[Production Debug] Request ID:', requestId);
+
+        if (!requestId) {
+          console.error('[Production Debug] No requestId provided in request body');
           return res.status(400).json({ 
-            message: 'This user has already sent you a friend request. Check your friend requests to accept it.'
+            message: 'Request ID is required',
+            debug: { 
+              body: req.body,
+              userId: userId
+            }
           });
         }
 
-        // Add friend request
-        await User.findByIdAndUpdate(friend._id, {
-          $push: { 
-            friendRequests: {
-              from: user._id,
-              createdAt: new Date()
-            }
-          },
-        }, { new: true });
+        console.log('[Production Debug] Fetching user documents...');
+        const [currentUser, requester] = await Promise.all([
+          User.findById(userId),
+          User.findById(requestId)
+        ]);
 
-        return res.status(200).json({ 
-          message: 'Friend request sent successfully'
-        });
-      } catch (error) {
-        console.error('Error sending friend request:', error);
-        return res.status(500).json({ message: 'Error sending friend request' });
-      }
-    }
-
-    // PUT: Accept a friend request
-    if (req.method === 'PUT') {
-      try {
-        logger.info('=== START: Friend Request Acceptance ===');
-        logger.debug('Request body:', req.body);
-        logger.debug('Username from request:', username);
-        logger.debug('Current user:', { id: user._id, username: user.username });
-        logger.debug('Headers:', req.headers);
-        logger.debug('MongoDB URI:', process.env.MONGODB_URI ? 'Set' : 'Not set');
-
-        if (!username) {
-          logger.error('No username provided in request');
-          return res.status(400).json({ message: 'Username is required' });
+        console.log('[Production Debug] Current user found:', !!currentUser);
+        console.log('[Production Debug] Requester found:', !!requester);
+        
+        if (currentUser) {
+          console.log('[Production Debug] Current user data:', {
+            id: currentUser._id,
+            friendRequests: currentUser.friendRequests?.length || 0,
+            friends: currentUser.friends?.length || 0
+          });
         }
 
-        // First get the fully populated user document to access friend request details
-        logger.debug('Fetching current user with populated data...');
-        const currentUser = await User.findById(user._id)
-          .populate({
-            path: 'friendRequests.from',
-            select: 'name email username'
-          })
-          .exec();
+        if (requester) {
+          console.log('[Production Debug] Requester data:', {
+            id: requester._id,
+            friends: requester.friends?.length || 0
+          });
+        }
 
         if (!currentUser) {
-          logger.error('Could not find current user with populated data');
-          return res.status(500).json({ message: 'Error loading user data' });
-        }
-
-        logger.debug('Current user data:', {
-          id: currentUser._id,
-          friendRequests: currentUser.friendRequests.map(r => ({
-            from: r.from,
-            createdAt: r.createdAt
-          }))
-        });
-
-        // Find the friend by username first
-        const friend = await User.findOne({ username: username.toLowerCase() });
-        if (!friend) {
-          logger.error('Friend not found with username:', username);
-          return res.status(404).json({ message: 'User not found' });
-        }
-
-        logger.debug('Found friend:', {
-          id: friend._id,
-          username: friend.username
-        });
-
-        // Check if friend request exists by ID
-        logger.debug('Looking for friend request...');
-        const pendingRequest = currentUser.friendRequests.find(
-          (request: FriendRequest) => request.from._id.toString() === friend._id.toString()
-        );
-
-        if (!pendingRequest) {
-          logger.error('No friend request found for user:', {
-            friendId: friend._id,
-            username: friend.username,
-            availableRequests: currentUser.friendRequests.map((r: FriendRequest) => ({
-              id: r.from._id,
-              username: r.from.username
-            }))
-          });
-          return res.status(400).json({ 
-            message: 'No friend request found from this user',
-            debug: {
-              requestedUsername: username,
-              availableRequests: currentUser.friendRequests.map((r: FriendRequest) => r.from.username)
-            }
+          console.error('[Production Debug] Current user not found:', userId);
+          return res.status(404).json({ 
+            message: 'User not found',
+            debug: { userId, requestId }
           });
         }
 
-        logger.debug('Found pending request:', {
-          from: {
-            id: pendingRequest.from._id,
-            username: friend.username
-          }
-        });
+        if (!requester) {
+          console.error('[Production Debug] Requester not found:', requestId);
+          return res.status(404).json({ 
+            message: 'Requester not found',
+            debug: { userId, requestId }
+          });
+        }
 
-        // Update both users
-        logger.info('Updating both users...');
+        // Start a session for the transaction
+        console.log('[Production Debug] Starting MongoDB session...');
+        const session = await User.startSession();
+        session.startTransaction();
+
         try {
-          const [updatedUser] = await Promise.all([
-            User.findByIdAndUpdate(
-              currentUser._id,
-              {
-                $push: { friends: friend._id },
-                $pull: { friendRequests: { from: friend._id } }
-              },
-              { new: true }
-            ).exec(),
-            User.findByIdAndUpdate(
-              friend._id,
-              { $push: { friends: currentUser._id } },
-              { new: true }
-            ).exec()
+          // Initialize arrays if undefined
+          currentUser.friendRequests = currentUser.friendRequests || [];
+          currentUser.friends = currentUser.friends || [];
+          requester.friends = requester.friends || [];
+
+          console.log('[Production Debug] Current state:', {
+            currentUserFriendRequests: currentUser.friendRequests.length,
+            currentUserFriends: currentUser.friends.length,
+            requesterFriends: requester.friends.length
+          });
+
+          // Check if friend request exists
+          const requestExists = currentUser.friendRequests.some(
+            (request: FriendRequest) => request.from.equals(requestId)
+          );
+          console.log('[Production Debug] Friend request exists:', requestExists);
+
+          if (!requestExists) {
+            console.error('[Production Debug] Friend request not found in current user\'s requests');
+            console.log('[Production Debug] Available requests:', currentUser.friendRequests.map(r => ({
+              from: r.from.toString(),
+              createdAt: r.createdAt
+            })));
+            
+            await session.abortTransaction();
+            return res.status(404).json({ 
+              message: 'Friend request not found',
+              debug: {
+                userId,
+                requestId,
+                availableRequests: currentUser.friendRequests.map(r => ({
+                  from: r.from.toString(),
+                  createdAt: r.createdAt
+                }))
+              }
+            });
+          }
+
+          // Remove friend request
+          console.log('[Production Debug] Removing friend request...');
+          currentUser.friendRequests = currentUser.friendRequests.filter(
+            (request: FriendRequest) => !request.from.equals(requestId)
+          );
+
+          // Add to friends list for both users if not already friends
+          const isAlreadyFriend = currentUser.friends.some(
+            (id: Types.ObjectId) => id.equals(requestId)
+          );
+          const isRequesterFriend = requester.friends.some(
+            (id: Types.ObjectId) => id.equals(userId)
+          );
+
+          console.log('[Production Debug] Friendship status:', {
+            isAlreadyFriend,
+            isRequesterFriend
+          });
+
+          if (!isAlreadyFriend) {
+            console.log('[Production Debug] Adding requester to current user\'s friends');
+            currentUser.friends.push(requestId);
+          }
+          if (!isRequesterFriend) {
+            console.log('[Production Debug] Adding current user to requester\'s friends');
+            requester.friends.push(userId);
+          }
+
+          console.log('[Production Debug] Saving changes...');
+          await Promise.all([
+            currentUser.save({ session }),
+            requester.save({ session })
           ]);
 
-          logger.info('Updates successful');
-          logger.debug('Updated user friends:', updatedUser?.friends);
-
+          console.log('[Production Debug] Committing transaction...');
+          await session.commitTransaction();
+          console.log('[Production Debug] Friend request accepted successfully');
+          
           return res.status(200).json({ 
-            message: 'Friend request accepted successfully',
-            friend: {
-              id: friend._id,
-              name: friend.name,
-              username: friend.username,
-              email: friend.email
+            message: 'Friend request accepted',
+            debug: {
+              currentUserFriends: currentUser.friends.length,
+              requesterFriends: requester.friends.length,
+              requestRemoved: true
             }
           });
-        } catch (updateError) {
-          logger.error('Error during user updates:', updateError);
-          throw updateError;
-        }
-      } catch (error) {
-        logger.error('Error accepting friend request:', error);
-        return res.status(500).json({ 
-          message: 'Error accepting friend request',
-          error: error instanceof Error ? error.message : 'Unknown error'
-        });
-      }
-    }
-
-    // DELETE: Reject/remove a friend request or remove a friend
-    if (req.method === 'DELETE') {
-      try {
-        logger.info('=== START: Friend Removal/Rejection ===');
-        logger.debug('Request body:', req.body);
-        
-        const { username, userId } = req.body;
-        
-        if (!username && !userId) {
-          logger.error('No username or userId provided');
-          return res.status(400).json({ message: 'Username or userId is required' });
+        } catch (error) {
+          console.error('[Production Debug] Error in friend request acceptance:', error);
+          await session.abortTransaction();
+          throw error;
+        } finally {
+          console.log('[Production Debug] Ending session...');
+          session.endSession();
         }
 
-        // First get the fully populated user document
-        logger.debug('Fetching current user with populated data...');
-        const currentUser = await User.findById(user._id)
-          .populate({
-            path: 'friendRequests.from',
-            select: 'name email username'
-          })
-          .populate('friends')
-          .exec();
+      case 'DELETE':
+        const { targetId } = req.body;
+        console.log('Removing friend/request:', targetId, 'for user', userId);
 
-        if (!currentUser) {
-          logger.error('Could not find current user with populated data');
-          return res.status(500).json({ message: 'Error loading user data' });
+        if (!targetId) {
+          console.error('No targetId provided in request body');
+          return res.status(400).json({ message: 'Target ID is required' });
         }
 
-        // Check if this is a friend removal
-        const friendToRemove = currentUser.friends.find(
-          (friend: Friend) => friend._id.toString() === userId || friend.username === username
-        );
-
-        if (friendToRemove) {
-          logger.info('Removing friend:', friendToRemove);
-          
-          // Remove friend from both users' friend lists
-          await Promise.all([
-            User.findByIdAndUpdate(
-              currentUser._id,
-              { $pull: { friends: friendToRemove._id } },
-              { new: true }
-            ),
-            User.findByIdAndUpdate(
-              friendToRemove._id,
-              { $pull: { friends: currentUser._id } },
-              { new: true }
-            )
-          ]);
-
-          logger.info('Friend removed successfully');
-          return res.status(200).json({ message: 'Friend removed successfully' });
-        }
-
-        // If not a friend removal, check for friend request rejection
-        let requestToRemove: FriendRequest | undefined;
-        if (userId) {
-          // Find by ID
-          requestToRemove = currentUser.friendRequests.find(
-            (request: FriendRequest) => request.from._id.toString() === userId
-          );
-        } else {
-          // Find by username
-          requestToRemove = currentUser.friendRequests.find(
-            (request: FriendRequest) => request.from.username?.toLowerCase() === username.toLowerCase()
-          );
-        }
-
-        if (!requestToRemove) {
-          logger.error('No friend request found to reject:', { username, userId });
-          return res.status(400).json({ message: 'No friend request found from this user' });
-        }
-
-        logger.debug('Found request to remove:', {
-          from: {
-            id: requestToRemove.from._id,
-            name: requestToRemove.from.name,
-            email: requestToRemove.from.email
-          }
-        });
-
-        // Remove the request
-        await User.findByIdAndUpdate(
-          currentUser._id,
-          {
-            $pull: { friendRequests: { from: requestToRemove.from._id } }
-          },
-          { new: true }
-        );
-
-        logger.info('Friend request rejected successfully');
-        return res.status(200).json({ message: 'Friend request rejected' });
-      } catch (error) {
-        logger.error('Error in friend removal/rejection:', error);
-        return res.status(500).json({ message: 'Error processing friend removal/rejection' });
-      }
-    }
-
-    // PATCH: Update user (temporary endpoint for fixing lilo's username)
-    if (req.method === 'PATCH') {
-      try {
-        logger.info('=== START: User Update ===');
-        
-        // Only allow updating lilo's record
-        const liloId = '684ebc174ef1c1e06472b747';
-        
-        const updatedUser = await User.findByIdAndUpdate(
-          liloId,
-          { 
-            $set: { 
-              username: 'lilo_stitch',
-            }
-          },
-          { new: true }
-        );
-
-        if (!updatedUser) {
-          logger.error('Could not find lilo\'s user record');
+        const userToUpdate = await User.findById(userId);
+        if (!userToUpdate) {
+          console.error('User not found:', userId);
           return res.status(404).json({ message: 'User not found' });
         }
 
-        logger.info('Successfully updated lilo\'s username');
-        return res.status(200).json({ 
-          message: 'Username updated successfully',
-          user: {
-            id: updatedUser._id,
-            name: updatedUser.name,
-            username: updatedUser.username,
-            email: updatedUser.email
-          }
-        });
-      } catch (error) {
-        logger.error('Error updating user:', error);
-        return res.status(500).json({ message: 'Error updating user' });
-      }
+        // Initialize arrays if undefined
+        userToUpdate.friendRequests = userToUpdate.friendRequests || [];
+        userToUpdate.friends = userToUpdate.friends || [];
+
+        // Remove from friend requests and friends
+        userToUpdate.friendRequests = userToUpdate.friendRequests.filter(
+          (request: FriendRequest) => !request.from.equals(targetId)
+        );
+        userToUpdate.friends = userToUpdate.friends.filter(
+          (id: Types.ObjectId) => !id.equals(targetId)
+        );
+
+        await userToUpdate.save();
+        console.log('Friend/request removed successfully');
+        return res.status(200).json({ message: 'Friend/request removed' });
+
+      default:
+        console.error('Method not allowed:', req.method);
+        return res.status(405).json({ message: 'Method not allowed' });
     }
   } catch (error) {
-    console.error('Friends operation error:', error);
-    return res.status(500).json({ message: 'Error processing friends operation' });
+    console.error('Error in friends API:', error);
+    return res.status(500).json({ 
+      message: 'Internal server error',
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
   }
 }
 
-export default function withAuth(
-  req: AuthenticatedRequest,
-  res: NextApiResponse
-) {
-  return authMiddleware(req, res, () => handler(req, res));
-} 
+export default withAuth(handler); 

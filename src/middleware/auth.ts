@@ -13,66 +13,52 @@ export interface AuthenticatedRequest extends NextApiRequest {
   user?: IUser & { _id: Types.ObjectId };
 }
 
-export async function authMiddleware(
-  req: AuthenticatedRequest,
-  res: NextApiResponse,
-  next: () => Promise<void>
-) {
-  try {
-    console.log('\n=== START: Auth Middleware ===');
-    console.log('Method:', req.method);
-    console.log('Path:', req.url);
-    
-    const authHeader = req.headers.authorization;
-    if (!authHeader?.startsWith('Bearer ')) {
-      console.log('No token provided');
-      return res.status(401).json({ message: 'No token provided' });
-    }
+type Handler = (req: AuthenticatedRequest, res: NextApiResponse) => Promise<void | NextApiResponse>;
 
-    const token = authHeader.split(' ')[1];
-    console.log('Token received, verifying...');
-    
-    let decoded;
+export const authMiddleware = (handler: Handler) => {
+  return async (req: AuthenticatedRequest, res: NextApiResponse) => {
     try {
-      decoded = jwt.verify(token, JWT_SECRET!) as { id: string };
-      console.log('Token verified, user ID:', decoded.id);
-    } catch (error) {
-      console.error('Token verification error:', error);
-      if (error instanceof jwt.TokenExpiredError) {
-        return res.status(401).json({ message: 'Token expired' });
+      // Get the token from the Authorization header
+      const authHeader = req.headers.authorization;
+      if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return res.status(401).json({ message: 'No token provided' });
       }
-      return res.status(401).json({ message: 'Invalid token' });
-    }
 
-    const user = await User.findById(decoded.id).select('-password');
-    if (!user) {
-      console.log('User not found for ID:', decoded.id);
-      return res.status(401).json({ message: 'User not found' });
-    }
+      const token = authHeader.split(' ')[1];
+      if (!token) {
+        return res.status(401).json({ message: 'Invalid token format' });
+      }
 
-    console.log('User found:', user._id);
-    req.user = user;
+      try {
+        // Verify the token
+        const decoded = jwt.verify(token, JWT_SECRET) as { id: string };
+        
+        // Get user from database using Mongoose
+        const user = await User.findById(decoded.id)
+          .select('-password')
+          .lean() as unknown as IUser & { _id: Types.ObjectId };
 
-    console.log('=== END: Auth Middleware ===\n');
-    
-    // Call the handler and catch any errors
-    try {
-      await next();
+        if (!user) {
+          return res.status(401).json({ message: 'User not found' });
+        }
+
+        // Add user to request object
+        req.user = user;
+
+        // Call the actual handler
+        return handler(req, res);
+      } catch (error) {
+        if (error instanceof jwt.JsonWebTokenError) {
+          return res.status(401).json({ message: 'Invalid token' });
+        }
+        throw error;
+      }
     } catch (error) {
-      console.error('Error in route handler:', error);
-      return res.status(500).json({ 
-        message: 'Internal server error',
-        error: error instanceof Error ? error.message : 'Unknown error'
-      });
+      console.error('Auth Middleware Error:', error);
+      return res.status(500).json({ message: 'Internal server error' });
     }
-  } catch (error) {
-    console.error('Auth middleware error:', error);
-    return res.status(500).json({ 
-      message: 'Authentication failed',
-      error: error instanceof Error ? error.message : 'Unknown error'
-    });
-  }
-}
+  };
+};
 
 export function generateToken(userId: string): string {
   return jwt.sign({ id: userId }, JWT_SECRET!, { expiresIn: '7d' });

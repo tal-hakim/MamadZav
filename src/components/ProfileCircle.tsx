@@ -16,15 +16,17 @@ const COLOR_PAIRS: ColorPair[] = [
 ];
 
 interface ProfileCircleProps {
-  name: string;
+  name?: string;
   size?: string;
   fontSize?: string;
 }
 
-export default function ProfileCircle({ name, size = "40px", fontSize = "16px" }: ProfileCircleProps) {
+export default function ProfileCircle({ name = "?", size = "40px", fontSize = "16px" }: ProfileCircleProps) {
   // Generate initials from name
   const initials = useMemo(() => {
+    if (!name || name.trim() === "") return "?";
     return name
+      .trim()
       .split(' ')
       .map(part => part[0])
       .join('')
@@ -34,7 +36,12 @@ export default function ProfileCircle({ name, size = "40px", fontSize = "16px" }
 
   // Generate consistent color based on name
   const colorPair = useMemo(() => {
-    const index = name.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % COLOR_PAIRS.length;
+    if (!name || name.trim() === "") {
+      return COLOR_PAIRS[0];
+    }
+    const index = name
+      .split('')
+      .reduce((acc, char) => acc + char.charCodeAt(0), 0) % COLOR_PAIRS.length;
     return COLOR_PAIRS[index];
   }, [name]);
 

@@ -2,324 +2,180 @@ import { useState, useEffect } from 'react';
 import {
   Box,
   Button,
-  Input,
   VStack,
   Text,
-  useToast,
   Container,
-  Spinner,
-  Flex,
   Heading,
-  Divider,
-  HStack,
-  InputGroup,
-  InputLeftElement,
-  List,
-  ListItem,
+  useToast,
+  Code,
 } from '@chakra-ui/react';
-import { useAuth } from '@/contexts/AuthContext';
-import { useRouter } from 'next/router';
-import ProfileCircle from '@/components/ProfileCircle';
-import { SearchIcon } from '@chakra-ui/icons';
-
-interface FriendRequest {
-  id: string;
-  name: string;
-  username: string;
-  email: string;
-  createdAt: string;
-}
-
-interface User {
-  id: string;
-  name: string;
-  username: string;
-  email: string;
-}
 
 export default function TestFriends() {
-  const [searchQuery, setSearchQuery] = useState('');
-  const [isSearching, setIsSearching] = useState(false);
-  const [searchResults, setSearchResults] = useState<User[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [isFetching, setIsFetching] = useState(true);
-  const [friendRequests, setFriendRequests] = useState<FriendRequest[]>([]);
+  const [data, setData] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const toast = useToast();
-  const { user, loading } = useAuth();
-  const router = useRouter();
 
-  useEffect(() => {
-    if (!loading && !user) {
-      router.push('/login');
-    }
-  }, [loading, user, router]);
-
-  useEffect(() => {
-    if (user) {
-      fetchFriendRequests();
-    }
-  }, [user]);
-
-  useEffect(() => {
-    const searchUsers = async () => {
-      if (!searchQuery.trim()) {
-        setSearchResults([]);
-        return;
-      }
-
-      try {
-        setIsSearching(true);
-        const response = await fetch(`/api/user/search?q=${encodeURIComponent(searchQuery)}`, {
-          headers: {
-            Authorization: `Bearer ${localStorage.getItem('token')}`,
-          },
-        });
-
-        if (!response.ok) {
-          throw new Error('Failed to search users');
-        }
-
-        const data = await response.json();
-        setSearchResults(data.users || []);
-      } catch (error) {
-        console.error('Error searching users:', error);
-        toast({
-          title: 'Error searching users',
-          description: error instanceof Error ? error.message : 'Something went wrong',
-          status: 'error',
-          duration: 3000,
-        });
-        setSearchResults([]);
-      } finally {
-        setIsSearching(false);
-      }
-    };
-
-    const debounceTimeout = setTimeout(searchUsers, 300);
-    return () => clearTimeout(debounceTimeout);
-  }, [searchQuery, toast]);
-
-  const fetchFriendRequests = async () => {
+  // Function to fetch user data
+  const fetchData = async () => {
+    setLoading(true);
+    setError(null);
     try {
-      setIsFetching(true);
-      const response = await fetch('/api/user/friends', {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        throw new Error('No authentication token found. Please login first.');
+      }
+
+      const response = await fetch('/api/user/test-friend-request', {
         headers: {
-          Authorization: `Bearer ${localStorage.getItem('token')}`,
+          'Authorization': `Bearer ${token}`,
         },
       });
+
+      const responseData = await response.json();
+      console.log('Response:', responseData);
+      setData(responseData);
       
       if (!response.ok) {
-        throw new Error('Failed to fetch friend requests');
+        throw new Error(responseData.message || 'Failed to fetch data');
       }
-      
-      const data = await response.json();
-      setFriendRequests(data.friendRequests || []);
-    } catch (error) {
-      console.error('Error fetching friend requests:', error);
+
       toast({
-        title: 'Error fetching friend requests',
-        description: error instanceof Error ? error.message : 'Something went wrong',
-        status: 'error',
+        title: 'Success',
+        description: 'Data fetched successfully',
+        status: 'success',
         duration: 3000,
       });
-      setFriendRequests([]);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'An error occurred';
+      setError(message);
+      toast({
+        title: 'Error',
+        description: message,
+        status: 'error',
+        duration: 5000,
+      });
     } finally {
-      setIsFetching(false);
+      setLoading(false);
     }
   };
 
-  const sendFriendRequest = async (username: string) => {
+  // Function to test accepting a friend request
+  const testAccept = async (requestId: string) => {
+    setLoading(true);
+    setError(null);
     try {
-      setIsLoading(true);
-      const response = await fetch('/api/user/friends', {
-        method: 'POST',
+      const token = localStorage.getItem('token');
+      if (!token) {
+        throw new Error('No authentication token found. Please login first.');
+      }
+
+      console.log('Testing accept for request ID:', requestId);
+
+      const response = await fetch('/api/user/test-friend-request', {
+        method: 'PUT',
         headers: {
+          'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
         },
-        body: JSON.stringify({ username }),
+        body: JSON.stringify({ requestId }),
       });
 
-      const data = await response.json();
+      const responseData = await response.json();
+      console.log('Accept response:', responseData);
 
       if (!response.ok) {
-        throw new Error(data.message || 'Failed to send friend request');
+        throw new Error(responseData.message || 'Failed to accept request');
       }
 
       toast({
-        title: 'Success!',
-        description: data.message,
+        title: 'Success',
+        description: 'Friend request tested successfully',
         status: 'success',
         duration: 3000,
       });
 
-      // Clear search results
-      setSearchQuery('');
-      setSearchResults([]);
-    } catch (error) {
+      // Refresh data
+      await fetchData();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'An error occurred';
+      setError(message);
       toast({
         title: 'Error',
-        description: error instanceof Error ? error.message : 'Failed to send friend request',
+        description: message,
         status: 'error',
-        duration: 3000,
+        duration: 5000,
       });
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
   };
 
-  const handleFriendRequest = async (username: string, action: 'accept' | 'reject') => {
-    try {
-      const response = await fetch('/api/user/friends', {
-        method: action === 'accept' ? 'PUT' : 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
-        },
-        body: JSON.stringify({ username }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.message || `Failed to ${action} friend request`);
-      }
-
-      toast({
-        title: 'Success!',
-        description: data.message,
-        status: 'success',
-        duration: 3000,
-      });
-
-      // Refresh friend requests
-      fetchFriendRequests();
-    } catch (error) {
-      toast({
-        title: 'Error',
-        description: error instanceof Error ? error.message : `Failed to ${action} friend request`,
-        status: 'error',
-        duration: 3000,
-      });
-    }
-  };
-
-  if (loading || isFetching) {
-    return (
-      <Flex justify="center" align="center" minH="calc(100vh - 64px)">
-        <Spinner size="xl" />
-      </Flex>
-    );
-  }
-
-  if (!user) {
-    return null;
-  }
+  // Fetch data on component mount
+  useEffect(() => {
+    fetchData();
+  }, []);
 
   return (
-    <Container maxW="container.sm" py={16}>
-      <VStack spacing={8} align="stretch">
-        <Box>
-          <Heading size="lg" mb={4}>Add Friends</Heading>
-          <VStack spacing={4}>
-            <Box w="full">
-              <InputGroup>
-                <InputLeftElement pointerEvents="none">
-                  <SearchIcon color="gray.300" />
-                </InputLeftElement>
-                <Input
-                  placeholder="Search users by name or username..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                />
-              </InputGroup>
-            </Box>
-            
-            {isSearching ? (
-              <Flex justify="center" w="full" py={4}>
-                <Spinner />
-              </Flex>
-            ) : searchResults.length > 0 ? (
-              <List spacing={2} w="full">
-                {searchResults.map((result) => (
-                  <ListItem
-                    key={result.id}
-                    p={3}
-                    bg="white"
-                    borderRadius="md"
-                    boxShadow="sm"
-                  >
-                    <Flex justify="space-between" align="center">
-                      <Flex align="center" gap={3}>
-                        <ProfileCircle name={result.name} />
-                        <Box>
-                          <Text fontWeight="bold">{result.name}</Text>
-                          <Text fontSize="sm" color="gray.600">@{result.username}</Text>
-                        </Box>
-                      </Flex>
-                      <Button
-                        size="sm"
-                        colorScheme="blue"
-                        onClick={() => sendFriendRequest(result.username)}
-                        isLoading={isLoading}
-                      >
-                        Add Friend
-                      </Button>
-                    </Flex>
-                  </ListItem>
-                ))}
-              </List>
-            ) : searchQuery && !isSearching ? (
-              <Text color="gray.500" textAlign="center">No users found</Text>
-            ) : null}
-          </VStack>
-        </Box>
-
-        <Divider />
+    <Container maxW="container.md" py={8}>
+      <VStack spacing={6} align="stretch">
+        <Heading>Friend Request Debug Page</Heading>
         
         <Box>
-          <Heading size="md" mb={4}>Friend Requests</Heading>
-          {friendRequests.length > 0 ? (
-            <VStack spacing={4} align="stretch">
-              {friendRequests.map((request) => (
-                <Box
-                  key={request.id}
-                  p={4}
-                  borderWidth={1}
-                  borderRadius="md"
-                  bg="white"
-                >
-                  <Flex justify="space-between" align="center">
-                    <Flex align="center" gap={3}>
-                      <ProfileCircle name={request.name} />
-                      <Box>
-                        <Text fontWeight="bold">{request.name}</Text>
-                        <Text fontSize="sm" color="gray.600">@{request.username}</Text>
-                      </Box>
-                    </Flex>
-                    <HStack>
-                      <Button
-                        size="sm"
-                        colorScheme="green"
-                        onClick={() => handleFriendRequest(request.username, 'accept')}
-                      >
-                        Accept
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => handleFriendRequest(request.username, 'reject')}
-                      >
-                        Reject
-                      </Button>
-                    </HStack>
-                  </Flex>
-                </Box>
-              ))}
-            </VStack>
-          ) : (
-            <Text color="gray.500">No pending friend requests</Text>
+          <Button
+            colorScheme="blue"
+            onClick={fetchData}
+            isLoading={loading}
+            mb={4}
+          >
+            Refresh Data
+          </Button>
+
+          {error && (
+            <Text color="red.500" mb={4}>
+              Error: {error}
+            </Text>
           )}
+
+          <VStack align="stretch" spacing={4}>
+            {/* Raw Response Data */}
+            <Box>
+              <Heading size="md" mb={2}>Raw Response Data:</Heading>
+              <Code p={4} borderRadius="md" whiteSpace="pre-wrap">
+                {JSON.stringify(data, null, 2)}
+              </Code>
+            </Box>
+
+            {/* Friend Requests */}
+            <Box>
+              <Heading size="md" mb={2}>Friend Requests:</Heading>
+              {data?.userData?.friendRequests?.length > 0 ? (
+                data.userData.friendRequests.map((request: any) => (
+                  <Box 
+                    key={request.from._id} 
+                    p={4} 
+                    borderWidth={1} 
+                    borderRadius="md" 
+                    mb={2}
+                  >
+                    <Text>From: {request.from.username}</Text>
+                    <Text>ID: {request.from._id}</Text>
+                    <Button
+                      colorScheme="green"
+                      size="sm"
+                      mt={2}
+                      onClick={() => testAccept(request.from._id)}
+                      isLoading={loading}
+                    >
+                      Test Accept
+                    </Button>
+                  </Box>
+                ))
+              ) : (
+                <Text>No friend requests found</Text>
+              )}
+            </Box>
+          </VStack>
         </Box>
       </VStack>
     </Container>

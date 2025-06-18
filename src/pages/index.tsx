@@ -54,25 +54,25 @@ const isOverdue = (lastCheckIn: string | null): boolean => {
   
   const checkInDate = new Date(lastCheckIn);
   const now = new Date();
-  const hoursDiff = (now.getTime() - checkInDate.getTime()) / (1000 * 60 * 60);
+  const diffInHours = (now.getTime() - checkInDate.getTime()) / (1000 * 60 * 60);
   
-  return hoursDiff > 24;
+  return diffInHours >= 24;
 };
 
 // Function to format the last check-in time in a user-friendly way
 const formatLastCheckIn = (lastCheckIn: string): string => {
   const checkInDate = new Date(lastCheckIn);
   const now = new Date();
-  const minutesDiff = Math.floor((now.getTime() - checkInDate.getTime()) / (1000 * 60));
-  const hoursDiff = Math.floor(minutesDiff / 60);
-  const daysDiff = Math.floor(hoursDiff / 24);
-
-  if (minutesDiff < 60) {
-    return `${minutesDiff} minute${minutesDiff === 1 ? '' : 's'} ago`;
-  } else if (hoursDiff < 24) {
-    return `${hoursDiff} hour${hoursDiff === 1 ? '' : 's'} ago`;
+  const diffInHours = Math.floor((now.getTime() - checkInDate.getTime()) / (1000 * 60 * 60));
+  
+  if (diffInHours < 1) {
+    const diffInMinutes = Math.floor((now.getTime() - checkInDate.getTime()) / (1000 * 60));
+    return `${diffInMinutes} minute${diffInMinutes === 1 ? '' : 's'} ago`;
+  } else if (diffInHours < 24) {
+    return `${diffInHours} hour${diffInHours === 1 ? '' : 's'} ago`;
   } else {
-    return `${daysDiff} day${daysDiff === 1 ? '' : 's'} ago`;
+    const diffInDays = Math.floor(diffInHours / 24);
+    return `${diffInDays} day${diffInDays === 1 ? '' : 's'} ago`;
   }
 };
 
@@ -102,15 +102,17 @@ export default function Home() {
   }, [user]);
 
   const handleAuthError = (error: any) => {
+    console.error('Auth error:', error);
     if (axios.isAxiosError(error) && error.response?.status === 401) {
       toast({
         title: 'Session expired',
-        description: 'Please login again',
+        description: 'Please log in again',
         status: 'error',
-        duration: 3000,
+        duration: 5000,
+        isClosable: true,
       });
-      logout();
-      router.push('/login');
+      localStorage.removeItem('token');
+      window.location.href = '/login';
     }
   };
 
@@ -120,7 +122,8 @@ export default function Home() {
       console.log('Fetching friends list...');
       const token = localStorage.getItem('token');
       if (!token) {
-        throw new Error('No authentication token found');
+        console.log('No token found');
+        return;
       }
 
       const response = await axios.get('/api/user/friends', {
@@ -150,85 +153,60 @@ export default function Home() {
 
   const handleAcceptRequest = async (username: string) => {
     try {
-      console.log('Accepting friend request for:', username);
-      const token = localStorage.getItem('token');
-      if (!token) {
-        console.error('No token found');
-        throw new Error('No authentication token found');
+      const request = friendRequests.find(req => req.username === username);
+      if (!request) {
+        console.error('Friend request not found');
+        return;
       }
 
-      console.log('Sending PUT request to /api/user/friends');
-      console.log('Request details:', {
-        url: '/api/user/friends',
-        method: 'PUT',
-        headers: { Authorization: `Bearer ${token}` },
-        body: { username }
-      });
-
-      const response = await axios.put('/api/user/friends', 
-        { username },
-        { headers: { Authorization: `Bearer ${token}` } }
+      await axios.put('/api/user/friends', 
+        { requestId: request.id },
+        { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }
       );
-      
-      console.log('Response:', {
-        status: response.status,
-        data: response.data
-      });
 
       toast({
         title: 'Friend request accepted',
-        description: 'Friend request accepted successfully',
         status: 'success',
         duration: 3000,
       });
-      
-      console.log('Refreshing friends list...');
+
       await fetchFriends();
-      console.log('Friends list refreshed');
     } catch (error) {
-      console.error('Error accepting friend request:', {
-        error,
-        response: error.response?.data,
-        status: error.response?.status
-      });
-      
-      const errorMessage = error.response?.data?.message || error.message || 'Unknown error occurred';
-      
+      console.error('Error accepting friend request:', error);
+      handleAuthError(error);
       toast({
         title: 'Error accepting friend request',
-        description: errorMessage,
         status: 'error',
-        duration: 5000,
-        isClosable: true,
+        duration: 3000,
       });
     }
   };
 
-  const handleRejectRequest = async (username: string, userId?: string) => {
+  const handleRejectRequest = async (username: string) => {
     try {
-      const token = localStorage.getItem('token');
-      if (!token) {
-        throw new Error('No authentication token found');
+      const request = friendRequests.find(req => req.username === username);
+      if (!request) {
+        console.error('Friend request not found');
+        return;
       }
 
       await axios.delete('/api/user/friends', {
-        headers: { Authorization: `Bearer ${token}` },
-        data: userId ? { userId } : { username }
+        data: { targetId: request.id },
+        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
       });
 
       toast({
         title: 'Friend request rejected',
-        status: 'success',
+        status: 'info',
         duration: 3000,
       });
 
-      fetchFriends();
+      await fetchFriends();
     } catch (error) {
+      console.error('Error rejecting friend request:', error);
       handleAuthError(error);
-      
       toast({
         title: 'Error rejecting friend request',
-        description: error instanceof Error ? error.message : 'Unknown error occurred',
         status: 'error',
         duration: 3000,
       });
@@ -259,16 +237,21 @@ export default function Home() {
 
   const handlePing = async (friendId: string) => {
     try {
-      await pingFriend(friendId);
+      await axios.post('/api/user/ping', 
+        { friendId },
+        { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }
+      );
+
       toast({
-        title: 'Ping sent successfully',
+        title: 'Check-in reminder sent',
         status: 'success',
         duration: 3000,
       });
     } catch (error) {
+      console.error('Error pinging friend:', error);
+      handleAuthError(error);
       toast({
-        title: 'Failed to send ping',
-        description: error instanceof Error ? error.message : 'Unknown error occurred',
+        title: 'Error sending reminder',
         status: 'error',
         duration: 3000,
       });
@@ -279,46 +262,50 @@ export default function Home() {
     if (!friendToDelete) return;
 
     try {
-      const token = localStorage.getItem('token');
-      if (!token) {
-        throw new Error('No authentication token found');
-      }
-
       await axios.delete('/api/user/friends', {
-        headers: { Authorization: `Bearer ${token}` },
-        data: { userId: friendToDelete.id }
+        data: { targetId: friendToDelete.id },
+        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
       });
 
       toast({
         title: 'Friend removed',
-        status: 'success',
+        status: 'info',
         duration: 3000,
       });
 
-      fetchFriends();
       onAlertClose();
+      await fetchFriends();
     } catch (error) {
+      console.error('Error removing friend:', error);
       handleAuthError(error);
-      
       toast({
         title: 'Error removing friend',
-        description: error instanceof Error ? error.message : 'Unknown error occurred',
         status: 'error',
         duration: 3000,
       });
     }
   };
 
-  if (loading) {
+  const filterFriends = (friend: Friend) => {
+    if (!searchQuery) return true;
+    const query = searchQuery.toLowerCase();
+    return friend.name.toLowerCase().includes(query) || friend.username.toLowerCase().includes(query);
+  };
+
+  if (loading || loadingFriends) {
     return (
-      <Flex justify="center" align="center" minH="50vh">
-        <Spinner size="xl" />
-      </Flex>
+      <VStack spacing={4} align="stretch" p={6}>
+        <Spinner />
+      </VStack>
     );
   }
 
   if (!user) {
-    return null;
+    return (
+      <VStack spacing={4} align="stretch" p={6}>
+        <Text>Please log in to view this page.</Text>
+      </VStack>
+    );
   }
 
   return (
@@ -394,10 +381,7 @@ export default function Home() {
                 <VStack spacing={4} align="stretch">
                   {friends
                     .filter(friend => isOverdue(friend.lastCheckIn))
-                    .filter(friend => 
-                      friend.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                      friend.username.toLowerCase().includes(searchQuery.toLowerCase())
-                    )
+                    .filter(filterFriends)
                     .map((friend) => (
                       <Flex
                         key={friend.id}
@@ -469,10 +453,7 @@ export default function Home() {
                 <VStack spacing={4} align="stretch">
                   {friends
                     .filter(friend => !isOverdue(friend.lastCheckIn))
-                    .filter(friend => 
-                      friend.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                      friend.username.toLowerCase().includes(searchQuery.toLowerCase())
-                    )
+                    .filter(filterFriends)
                     .map((friend) => (
                       <Flex
                         key={friend.id}
@@ -576,7 +557,7 @@ export default function Home() {
             </AlertDialogHeader>
 
             <AlertDialogBody>
-              Are you sure you want to remove {friendToDelete?.name}? This action cannot be undone.
+              Are you sure you want to remove {friendToDelete?.name || 'this friend'}? This action cannot be undone.
             </AlertDialogBody>
 
             <AlertDialogFooter>

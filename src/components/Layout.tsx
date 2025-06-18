@@ -8,9 +8,9 @@ interface LayoutProps {
 
 export default function Layout({ children }: LayoutProps) {
   return (
-    <Box minH="100vh" bg="#fbf6f0">
+    <Box>
       <Navbar />
-      <Container maxW="container.xl" px={{ base: 4, md: 8 }} py={{ base: 4, md: 6 }}>
+      <Container maxW="container.xl" py={8}>
         {children}
       </Container>
     </Box>

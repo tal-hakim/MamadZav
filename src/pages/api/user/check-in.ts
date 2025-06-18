@@ -36,9 +36,4 @@ async function handler(
   }
 }
 
-export default function withAuth(
-  req: AuthenticatedRequest,
-  res: NextApiResponse
-) {
-  return authMiddleware(req, res, () => handler(req, res));
-} 
+export default authMiddleware(handler); 
