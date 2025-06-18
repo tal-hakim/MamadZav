@@ -200,7 +200,7 @@ async function handler(req: AuthenticatedRequest, res: NextApiResponse) {
 
           if (!requestExists) {
             console.error('[Production Debug] Friend request not found in current user\'s requests');
-            console.log('[Production Debug] Available requests:', currentUser.friendRequests.map(r => ({
+            console.log('[Production Debug] Available requests:', currentUser.friendRequests.map((r: FriendRequest) => ({
               from: r.from.toString(),
               createdAt: r.createdAt
             })));
@@ -211,7 +211,7 @@ async function handler(req: AuthenticatedRequest, res: NextApiResponse) {
               debug: {
                 userId,
                 requestId,
-                availableRequests: currentUser.friendRequests.map(r => ({
+                availableRequests: currentUser.friendRequests.map((r: FriendRequest) => ({
                   from: r.from.toString(),
                   createdAt: r.createdAt
                 }))
